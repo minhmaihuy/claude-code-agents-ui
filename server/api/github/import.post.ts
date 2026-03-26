@@ -1,3 +1,5 @@
+import { syncGithubImportSkillSymlinks } from '../../utils/githubSkillSymlinks'
+
 export default defineEventHandler(async (event) => {
   const { owner, repo, url, targetPath, selectedSkills } = await readBody<{
     owner: string
@@ -53,6 +55,12 @@ export default defineEventHandler(async (event) => {
   } catch {
     await removeClone(localPath)
     throw createError({ statusCode: 500, message: 'Failed to save import registry' })
+  }
+
+  try {
+    await syncGithubImportSkillSymlinks(entry, [], entry.selectedSkills || [])
+  } catch {
+    // Registry import succeeded; symlinks are best-effort (permissions, layout).
   }
 
   return entry

@@ -43,7 +43,7 @@ export function useWebSocketChat() {
 
         // Handle connection event
         if ('type' in data && data.type === 'connected') {
-          console.log('[WS Chat] Session:', data.sessionId)
+          console.log('[WS Chat] WebSocket connected')
           return
         }
 
@@ -240,11 +240,6 @@ export function useWebSocketChat() {
 
     return sendMessage(message)
   }
-
-  // Auto-connect on mount
-  onMounted(() => {
-    connect()
-  })
 
   // Cleanup on unmount
   onUnmounted(() => {

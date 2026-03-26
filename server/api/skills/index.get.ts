@@ -1,5 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { existsSync } from 'node:fs'
 import { resolveClaudePath } from '../../utils/claudeDir'
 import { parseFrontmatter } from '../../utils/frontmatter'
@@ -96,35 +96,117 @@ export default defineEventHandler(async () => {
 
       if (!existsSync(scanRoot)) continue
 
+      /** Avoid duplicates when a GitHub skill is already visible via ~/.claude/skills symlink. */
+      const slugClaimed = (slug: string) => skills.some(s => s.slug === slug)
+
+      const shouldIncludeSkill = (slug: string) => {
+        return entry.selectedSkills.includes(slug)
+      }
+
+      // Prefer skills-index.json when present so we match the same slug resolution
+      // used during import/selection.
+      const indexPathCandidates = [join(entry.localPath, 'skills-index.json'), join(scanRoot, 'skills-index.json')]
+      const indexPath = indexPathCandidates.find(p => existsSync(p))
+
+      if (indexPath) {
+        try {
+          const rawIndex = await readFile(indexPath, 'utf-8')
+          const index = JSON.parse(rawIndex) as {
+            skills?: Array<{
+              slug: string
+              name?: string
+              description?: unknown
+              files?: string[]
+              path?: string
+            }>
+          }
+
+          const targetPrefix = entry.targetPath || ''
+          const indexedSkills = (index.skills || [])
+            .filter(s => !!s.slug)
+            .filter(s => {
+              if (!targetPrefix) return true
+              const filePath = s.files?.[0] || s.path || ''
+              return filePath.startsWith(targetPrefix)
+            })
+
+          for (const s of indexedSkills) {
+            const localSkillFilePath = join(entry.localPath, s.files?.[0] || s.path || '')
+            if (!existsSync(localSkillFilePath)) continue
+            if (!shouldIncludeSkill(s.slug)) continue
+            if (slugClaimed(s.slug)) continue
+
+            const raw = await readFile(localSkillFilePath, 'utf-8')
+            const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(raw)
+            if (!frontmatter.name || !frontmatter.description) continue
+
+            skills.push({
+              slug: s.slug,
+              frontmatter: { name: s.slug, ...frontmatter },
+              body,
+              filePath: localSkillFilePath,
+              source: 'github',
+              githubRepo: `${entry.owner}/${entry.repo}`,
+            })
+          }
+
+          continue
+        } catch {
+          // Fall through to filesystem scan.
+        }
+      }
+
+      // Fallback: scan imported repo on disk for markdown skills using frontmatter.
+      // This supports repos that don't store skills as `/<slug>/SKILL.md`.
+      const dedup = new Map<string, Skill>()
+
       const walkForSkills = async (dir: string) => {
-        const entries = await readdir(dir, { withFileTypes: true })
-        for (const item of entries) {
+        const dirEntries = await readdir(dir, { withFileTypes: true })
+        for (const item of dirEntries) {
           if (item.name.startsWith('.')) continue
+
           const fullPath = join(dir, item.name)
           if (item.isDirectory()) {
-            const skillPath = join(fullPath, 'SKILL.md')
-            if (existsSync(skillPath)) {
-              const raw = await readFile(skillPath, 'utf-8')
-              const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(raw)
-              if (frontmatter.name && frontmatter.description) {
-                if (entry.selectedSkills.length === 0 || entry.selectedSkills.includes(item.name)) {
-                  skills.push({
-                    slug: item.name,
-                    frontmatter: { name: item.name, ...frontmatter },
-                    body,
-                    filePath: skillPath,
-                    source: 'github',
-                    githubRepo: `${entry.owner}/${entry.repo}`,
-                  })
-                }
-              }
-            }
             await walkForSkills(fullPath)
+            continue
           }
+
+          if (!item.isFile()) continue
+          if (!item.name.toLowerCase().endsWith('.md')) continue
+
+          // Parse only once we have a candidate skill-like markdown file.
+          const raw = await readFile(fullPath, 'utf-8')
+          const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(raw)
+          if (!frontmatter.name || !frontmatter.description) continue
+
+          const rel = relative(scanRoot, fullPath)
+          const parts = rel.split(/[\\/]/).filter(Boolean)
+          const fileName = parts.at(-1) || item.name
+          const parentDir = parts.length >= 2 ? parts.at(-2) : undefined
+
+          const slug =
+            fileName.toLowerCase() === 'skill.md' && parentDir
+              ? parentDir
+              : fileName.replace(/\.md$/i, '')
+
+          if (!slug) continue
+          if (!shouldIncludeSkill(slug)) continue
+          if (slugClaimed(slug)) continue
+          if (dedup.has(slug)) continue
+
+          dedup.set(slug, {
+            slug,
+            frontmatter: { name: slug, ...frontmatter },
+            body,
+            filePath: fullPath,
+            source: 'github',
+            githubRepo: `${entry.owner}/${entry.repo}`,
+          })
         }
       }
 
       await walkForSkills(scanRoot)
+      skills.push(...dedup.values())
     }
   }
 

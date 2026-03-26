@@ -1,3 +1,5 @@
+import { syncGithubImportSkillSymlinks } from '../../utils/githubSkillSymlinks'
+
 export default defineEventHandler(async (event) => {
   const { owner, repo } = await readBody<{ owner: string; repo: string }>(event)
 
@@ -6,6 +8,12 @@ export default defineEventHandler(async (event) => {
 
   if (!entry) {
     throw createError({ statusCode: 404, message: 'Import not found' })
+  }
+
+  try {
+    await syncGithubImportSkillSymlinks(entry, [...entry.selectedSkills], [])
+  } catch {
+    // Best-effort: remove skill symlinks pointing at this clone before deleting it.
   }
 
   await removeClone(entry.localPath)

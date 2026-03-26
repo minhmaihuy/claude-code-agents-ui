@@ -10,12 +10,25 @@ const route = useRoute()
 const router = useRouter()
 
 const { messages, currentSessionId, createSession, loadSession, sessions, fetchSessions } = useChatSessions()
-const { isConnected, isStreaming, streamingText, sendChat, error } = useWebSocketChat()
+const { isConnected, isStreaming, streamingText, sendChat, error, connect, disconnect } = useWebSocketChat()
 
 const inputText = ref('')
 const messagesContainerRef = ref<HTMLElement | null>(null)
 const sidebarCollapsed = ref(false)
 const sidebarTab = ref<'chat' | 'sdk'>('chat')
+
+// Connect to WebSocket only when a session is active
+watch(currentSessionId, (sessionId) => {
+  if (sessionId) {
+    // Session selected - connect if not already connected
+    if (!isConnected.value) {
+      connect()
+    }
+  } else {
+    // No session - disconnect
+    disconnect()
+  }
+}, { immediate: true })
 
 // Handle session selection from sidebar
 async function handleSessionSelect(sessionId: string | null) {

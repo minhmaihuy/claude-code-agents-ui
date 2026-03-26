@@ -7,10 +7,9 @@ export default defineWebSocketHandler({
   open(peer: Peer) {
     console.log('[Chat WS] Client connected', peer.id)
 
-    // Send connected event
+    // Send connected event (no sessionId - that comes when user creates/selects a session)
     peer.send(JSON.stringify({
       type: 'connected',
-      sessionId: peer.id,
     }))
   },
 

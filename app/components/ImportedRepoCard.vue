@@ -22,6 +22,10 @@ const saving = ref(false)
 const availableSkills = ref<{ slug: string; name: string; description: string; selected: boolean }[]>([])
 const selected = ref<Set<string>>(new Set())
 
+const allSelected = computed(() => {
+  return availableSkills.value.length > 0 && selected.value.size === availableSkills.value.length
+})
+
 async function startEditing() {
   loadingSkills.value = true
   editing.value = true
@@ -46,11 +50,46 @@ function toggleSkill(slug: string) {
   selected.value = new Set(selected.value)
 }
 
+function toggleAllSkills() {
+  if (!availableSkills.value.length) return
+
+  if (allSelected.value) {
+    selected.value = new Set()
+  } else {
+    selected.value = new Set(availableSkills.value.map(s => s.slug))
+  }
+}
+
 async function saveSelection() {
   saving.value = true
   try {
-    await updateSelectedSkills(props.entry.owner, props.entry.repo, [...selected.value])
-    toast.add({ title: 'Selection updated', color: 'success' })
+    const { symlinkSync } = await updateSelectedSkills(
+      props.entry.owner,
+      props.entry.repo,
+      [...selected.value],
+    )
+    const warnParts: string[] = []
+    if (symlinkSync.skippedConflicts.length) {
+      warnParts.push(
+        `${symlinkSync.skippedConflicts.length} folder(s) in ~/.claude/skills already exist (not overwritten)`,
+      )
+    }
+    if (symlinkSync.missingInClone.length) {
+      warnParts.push(
+        `${symlinkSync.missingInClone.length} could not be linked (missing in clone)`,
+      )
+    }
+    const linkBits: string[] = []
+    if (symlinkSync.linked.length) linkBits.push(`linked ${symlinkSync.linked.length}`)
+    if (symlinkSync.removed.length) linkBits.push(`removed ${symlinkSync.removed.length} symlink(s)`)
+    toast.add({
+      title: 'Selection updated',
+      description: linkBits.length ? `${linkBits.join(', ')} under ~/.claude/skills` : undefined,
+      color: 'success',
+    })
+    if (warnParts.length) {
+      toast.add({ title: 'Symlinks', description: warnParts.join(' '), color: 'warning' })
+    }
     editing.value = false
     emit('changed')
   } catch {
@@ -121,12 +160,19 @@ function formatDate(iso: string) {
             </label>
           </div>
           <div class="flex justify-end gap-2">
+            <UButton
+              :label="allSelected ? 'Deselect all' : 'Select all'"
+              size="xs"
+              variant="ghost"
+              color="neutral"
+              :disabled="availableSkills.length === 0"
+              @click="toggleAllSkills"
+            />
             <UButton label="Cancel" variant="ghost" color="neutral" size="xs" @click="editing = false" />
             <UButton
               :label="`Save (${selected.size})`"
               size="xs"
               :loading="saving"
-              :disabled="selected.size === 0"
               @click="saveSelection"
             />
           </div>

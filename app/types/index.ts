@@ -408,5 +408,5 @@ export type ChatWebSocketMessage =
 
 export type ChatWebSocketEvent =
   | NormalizedMessage
-  | { type: 'connected'; sessionId: string }
+  | { type: 'connected'; sessionId?: string }
   | { type: 'disconnected' }

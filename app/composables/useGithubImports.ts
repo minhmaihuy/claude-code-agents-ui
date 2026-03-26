@@ -1,5 +1,12 @@
 import type { GithubImport, GithubImportsRegistry, ScanResult } from '~/types'
 
+export interface GithubSymlinkSync {
+  linked: string[]
+  removed: string[]
+  skippedConflicts: string[]
+  missingInClone: string[]
+}
+
 export function useGithubImports() {
   const imports = useState<GithubImport[]>('githubImports', () => [])
   const loading = useState('githubImportsLoading', () => false)
@@ -81,13 +88,16 @@ export function useGithubImports() {
   }
 
   async function updateSelectedSkills(owner: string, repo: string, selectedSkills: string[]) {
-    const data = await $fetch<{ entry: GithubImport }>('/api/github/edit-selection', {
-      method: 'POST',
-      body: { owner, repo, selectedSkills },
-    })
+    const data = await $fetch<{ entry: GithubImport; symlinkSync: GithubSymlinkSync }>(
+      '/api/github/edit-selection',
+      {
+        method: 'POST',
+        body: { owner, repo, selectedSkills },
+      },
+    )
     const idx = imports.value.findIndex(i => i.owner === owner && i.repo === repo)
     if (idx !== -1) imports.value[idx] = data.entry
-    return data.entry
+    return { entry: data.entry, symlinkSync: data.symlinkSync }
   }
 
   async function removeImport(owner: string, repo: string) {

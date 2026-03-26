@@ -210,7 +210,46 @@ const highlightedEdgeIds = computed(() => {
   return set
 })
 
-function onNodeMouseEnter(_: MouseEvent, node: any) {
+function hasClientXY(e: unknown): e is { clientX: number; clientY: number } {
+  return (
+    typeof e === 'object'
+    && e != null
+    && 'clientX' in e
+    && 'clientY' in e
+    && typeof (e as { clientX: unknown }).clientX === 'number'
+    && typeof (e as { clientY: unknown }).clientY === 'number'
+  )
+}
+
+/**
+ * @vue-flow/core may call handlers as either (event, node) or a single payload { event, node }.
+ */
+function parseVueFlowNodeArgs(first: unknown, second?: unknown): {
+  event: { clientX: number; clientY: number } | undefined
+  node: any
+} {
+  if (second != null && second !== undefined) {
+    return {
+      event: hasClientXY(first) ? first : undefined,
+      node: second,
+    }
+  }
+  const p = first as Record<string, unknown> | undefined
+  if (p && typeof p === 'object' && p.node != null) {
+    return {
+      event: hasClientXY(p.event) ? p.event : undefined,
+      node: p.node,
+    }
+  }
+  if (p && typeof p === 'object' && typeof p.id === 'string' && (p.data != null || p.type != null)) {
+    return { event: undefined, node: p }
+  }
+  return { event: undefined, node: undefined }
+}
+
+function onNodeMouseEnter(first: unknown, second?: unknown) {
+  const { node } = parseVueFlowNodeArgs(first, second)
+  if (!node?.id) return
   if (node.id.startsWith('header-')) return
   hoveredNodeId.value = node.id
   applyHighlightClasses()
@@ -278,7 +317,7 @@ function clearHighlightClasses() {
 // --- Tooltip ---
 const tooltip = ref<{ text: string; x: number; y: number } | null>(null)
 
-function showTooltip(event: MouseEvent, description: string | undefined) {
+function showTooltip(event: { clientX: number; clientY: number }, description: string | undefined) {
   if (!description) return
   tooltip.value = {
     text: description,
@@ -292,9 +331,10 @@ function hideTooltip() {
 }
 
 // Combined handlers
-function handleNodeMouseEnter(event: MouseEvent, node: any) {
-  onNodeMouseEnter(event, node)
-  if (node.data?.description) showTooltip(event, node.data.description)
+function handleNodeMouseEnter(first: unknown, second?: unknown) {
+  const { event, node } = parseVueFlowNodeArgs(first, second)
+  onNodeMouseEnter(first, second)
+  if (node?.data?.description && event) showTooltip(event, node.data.description)
 }
 
 function handleNodeMouseLeave() {
@@ -302,7 +342,9 @@ function handleNodeMouseLeave() {
   hideTooltip()
 }
 
-function onNodeClick(_: any, node: any) {
+function onNodeClick(first: unknown, second?: unknown) {
+  const { node } = parseVueFlowNodeArgs(first, second)
+  if (!node?.type || !node.data) return
   if (node.type === 'agent') router.push(`/agents/${node.data.slug}`)
   else if (node.type === 'command') router.push(`/commands/${node.data.slug}`)
   else if (node.type === 'skill') router.push(`/skills/${node.data.slug}`)
