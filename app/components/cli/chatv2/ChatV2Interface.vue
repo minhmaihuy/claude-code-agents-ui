@@ -75,13 +75,26 @@ const currentProjectDisplayName = ref<string>('')
 
 // Permission mode selector
 const permissionModeOptions: { value: PermissionMode; label: string; description: string }[] = [
-  { value: 'default', label: 'Default', description: 'Ask for permission on each action' },
+  { value: 'default', label: 'Ask', description: 'Ask for permission on each action' },
+  { value: 'skip', label: 'Skip', description: 'Allow all actions for this session' },
   { value: 'acceptEdits', label: 'Accept Edits', description: 'Auto-approve file edits' },
-  { value: 'bypassPermissions', label: 'Bypass', description: 'Allow all actions' },
   { value: 'plan', label: 'Plan Mode', description: 'Plan only, no execution' },
+  { value: 'bypassPermissions', label: 'Dangerous', description: 'Full bypass - dangerous mode' },
 ]
 
 const selectedPermissionMode = ref<PermissionMode>('default')
+
+// Model selector
+const modelOptions: { value: string; label: string }[] = [
+  { value: 'opus', label: 'Opus' },
+  { value: 'sonnet', label: 'Sonnet' },
+  { value: 'haiku', label: 'Haiku' },
+]
+
+const selectedModel = ref<string>('sonnet')
+
+// Thinking mode toggle
+const thinkingEnabled = ref(false)
 
 // Get display messages - either from live session or Claude Code history
 const displayMessages = computed<DisplayChatMessage[]>(() => {
@@ -332,6 +345,8 @@ async function handleSendMessage() {
       sessionId: urlSessionId.value || undefined, // SDK session ID from history
       workingDir: props.executionOptions.workingDir,
       permissionMode: selectedPermissionMode.value,
+      model: selectedModel.value,
+      thinkingEnabled: thinkingEnabled.value,
     })
 
     if (success) {
@@ -347,6 +362,8 @@ async function handleSendMessage() {
     sessionId: currentSessionId.value || undefined, // Will generate temp ID if undefined
     workingDir: props.executionOptions.workingDir,
     permissionMode: selectedPermissionMode.value,
+    model: selectedModel.value,
+    thinkingEnabled: thinkingEnabled.value,
   })
 
   if (success) {
@@ -474,6 +491,35 @@ function handleOpenFile(filePath: string) {
         </div>
 
         <div class="flex items-center gap-2 shrink-0">
+          <!-- Model Selector -->
+          <div class="relative">
+            <select
+              v-model="selectedModel"
+              class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all appearance-none pr-6 cursor-pointer"
+              style="background: var(--surface-raised); color: var(--text-secondary); border: 1px solid var(--border-subtle);"
+            >
+              <option value="opus">Opus</option>
+              <option value="sonnet">Sonnet</option>
+              <option value="haiku">Haiku</option>
+            </select>
+            <UIcon name="i-lucide-chevron-down" class="size-3 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" style="color: var(--text-tertiary);" />
+          </div>
+
+          <!-- Thinking Mode Toggle -->
+          <button
+            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all"
+            :style="{
+              background: thinkingEnabled ? 'rgba(139, 92, 246, 0.1)' : 'var(--surface-raised)',
+              color: thinkingEnabled ? '#8b5cf6' : 'var(--text-secondary)',
+              border: '1px solid var(--border-subtle)',
+            }"
+            @click="thinkingEnabled = !thinkingEnabled"
+            title="Enable deeper reasoning with thinking mode"
+          >
+            <UIcon name="i-lucide-brain" class="size-3" />
+            <span v-if="thinkingEnabled">On</span>
+          </button>
+
           <!-- Permission Mode Selector (only when viewing a specific chat session) -->
           <ChatV2PermissionModeSelector
             v-if="(viewMode === 'history' && urlSessionId) || (viewMode === 'live' && currentSessionId)"
