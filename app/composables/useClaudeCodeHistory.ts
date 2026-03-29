@@ -38,21 +38,21 @@ interface ClaudeCodeMessage {
 }
 
 export function useClaudeCodeHistory() {
-  const projects = ref<ClaudeCodeProject[]>([])
-  const sessions = ref<ClaudeCodeSession[]>([])
-  const messages = ref<ClaudeCodeMessage[]>([])
+  const projects = useState<ClaudeCodeProject[]>('claude-code-projects', () => [])
+  const sessions = useState<ClaudeCodeSession[]>('claude-code-sessions', () => [])
+  const messages = useState<ClaudeCodeMessage[]>('claude-code-messages', () => [])
 
-  const isLoadingProjects = ref(false)
-  const isLoadingSessions = ref(false)
-  const isLoadingMessages = ref(false)
+  const isLoadingProjects = useState<boolean>('claude-code-loading-projects', () => false)
+  const isLoadingSessions = useState<boolean>('claude-code-loading-sessions', () => false)
+  const isLoadingMessages = useState<boolean>('claude-code-loading-messages', () => false)
 
-  const selectedProject = ref<ClaudeCodeProject | null>(null)
-  const selectedSession = ref<ClaudeCodeSession | null>(null)
+  const selectedProject = useState<ClaudeCodeProject | null>('claude-code-selected-project', () => null)
+  const selectedSession = useState<ClaudeCodeSession | null>('claude-code-selected-session', () => null)
 
-  const sessionsHasMore = ref(false)
-  const sessionsTotal = ref(0)
-  const messagesHasMore = ref(false)
-  const messagesTotal = ref(0)
+  const sessionsHasMore = useState<boolean>('claude-code-sessions-has-more', () => false)
+  const sessionsTotal = useState<number>('claude-code-sessions-total', () => 0)
+  const messagesHasMore = useState<boolean>('claude-code-messages-has-more', () => false)
+  const messagesTotal = useState<number>('claude-code-messages-total', () => 0)
 
   /**
    * Fetch all Claude Code projects
@@ -63,10 +63,10 @@ export function useClaudeCodeHistory() {
       const response = await $fetch<{
         projects: ClaudeCodeProject[]
         total: number
-      }>('/api/v2/claude-code/projects')
+      }>('/api/projects') // Use the consolidated endpoint
 
-      projects.value = response.projects
-      return response.projects
+      projects.value = response
+      return response
     } catch (error) {
       console.error('Failed to fetch Claude Code projects:', error)
       projects.value = []
@@ -87,7 +87,7 @@ export function useClaudeCodeHistory() {
         hasMore: boolean
         total: number
         projectName: string
-      }>(`/api/v2/claude-code/projects/${encodeURIComponent(projectName)}/sessions`, {
+      }>(`/api/projects/${encodeURIComponent(projectName)}/sessions`, {
         query: { limit, offset }
       })
 
@@ -108,6 +108,62 @@ export function useClaudeCodeHistory() {
       return []
     } finally {
       isLoadingSessions.value = false
+    }
+  }
+
+  /**
+   * Rename a session
+   */
+  async function renameSession(projectName: string, sessionId: string, newName: string) {
+    try {
+      await $fetch(`/api/sessions/${encodeURIComponent(sessionId)}/rename`, {
+        method: 'PUT',
+        body: { summary: newName, projectName }
+      })
+
+      // Update local state
+      const session = sessions.value.find(s => s.id === sessionId)
+      if (session) {
+        session.summary = newName
+      }
+      if (selectedSession.value?.id === sessionId) {
+        selectedSession.value.summary = newName
+      }
+      return true
+    } catch (error) {
+      console.error('Failed to rename session:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Delete a session
+   */
+  async function deleteSession(projectName: string, sessionId: string) {
+    try {
+      await $fetch(`/api/projects/${encodeURIComponent(projectName)}/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE'
+      })
+
+      // Update local state
+      sessions.value = sessions.value.filter(s => s.id !== sessionId)
+      sessionsTotal.value = Math.max(0, sessionsTotal.value - 1)
+
+      if (selectedSession.value?.id === sessionId) {
+        selectedSession.value = null
+        messages.value = []
+      }
+
+      // Update project session count
+      const project = projects.value.find(p => p.name === projectName)
+      if (project) {
+        project.sessionCount = Math.max(0, project.sessionCount - 1)
+      }
+
+      return true
+    } catch (error) {
+      console.error('Failed to delete session:', error)
+      throw error
     }
   }
 
@@ -240,6 +296,8 @@ export function useClaudeCodeHistory() {
     fetchProjects,
     fetchSessions,
     fetchMessages,
+    renameSession,
+    deleteSession,
     selectProject,
     selectSession,
     loadMoreSessions,

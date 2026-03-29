@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveClaudePath } from '../../utils/claudeDir'
 import { serializeFrontmatter } from '../../utils/frontmatter'
+import { resolvePluginInstallPath } from '../../utils/marketplace'
 import type { SkillPayload } from '~/types'
 
 interface InstalledEntry {
@@ -29,10 +30,11 @@ async function findSkillDir(slug: string): Promise<string | null> {
   const installedPath = resolveClaudePath('plugins', 'installed_plugins.json')
   const installed = await readJson<{ plugins: Record<string, InstalledEntry[]> }>(installedPath)
   if (installed?.plugins) {
-    for (const entries of Object.values(installed.plugins)) {
+    for (const [pluginId, entries] of Object.entries(installed.plugins)) {
       const entry = entries[0]
       if (!entry) continue
-      const pluginSkillDir = join(entry.installPath, 'skills', slug)
+      const installPath = resolvePluginInstallPath(pluginId, entry.installPath)
+      const pluginSkillDir = join(installPath, 'skills', slug)
       if (existsSync(join(pluginSkillDir, 'SKILL.md'))) return pluginSkillDir
     }
   }

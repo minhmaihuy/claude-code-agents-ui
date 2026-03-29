@@ -7,7 +7,7 @@ import type { ProviderAdapter, ProviderQueryOptions, ProviderInfo } from './type
 import { normalizeSDKMessage } from '../messageNormalizer'
 import { resolveClaudePath } from '../claudeDir'
 import { parseFrontmatter } from '../frontmatter'
-import { saveMessageToSession, getSessionMessages, getSessionMessagesCount, hasAssistantMessages } from '../chatSessionStorage'
+import { detectSdkSession, loadSdkSessionMessages } from '../sdkSessionStorage'
 import { MODEL_ALIAS_KEY } from '../models'
 
 // Store active query instances for interruption
@@ -40,43 +40,19 @@ function mapPermissionMode(mode?: string): string {
 
 /**
  * Claude provider adapter implementation.
- * Wraps the Claude Agent SDK for multi-provider support.
- *
- * Session Management:
- * - For NEW sessions: Don't use resume, let SDK create session_id
- * - For EXISTING sessions: Use resume with the SDK's session_id
- * - The SDK's session_id is returned to frontend via session_created event
- * - Frontend should store and use the SDK's session_id for subsequent queries
+ * Follows the claudecodeui pattern:
+ * - No custom storage writes — the SDK writes to ~/.claude/projects/ natively
+ * - Always pass `resume: sessionId` for any real session ID
+ * - Let the SDK decide whether to resume or start fresh (it knows its own sessions)
  */
 export const claudeProvider: ProviderAdapter = {
   name: 'claude',
 
   async query(prompt: string, options: ProviderQueryOptions, ws: Peer): Promise<void> {
-    // capturedSessionId will hold the SDK's session_id (either from resume or newly created)
     let capturedSessionId: string | null = null
     let sessionCreatedSent = false
-    let userMessageSaved = false
     let accumulatedText = ''
     let hasTextMessageFromResult = false
-
-    // Check if this is a resume (session has prior SDK interaction)
-    // If sessionId is provided and has assistant messages, it's a valid SDK session
-    let shouldResume = false
-    if (options.sessionId) {
-      shouldResume = await hasAssistantMessages(options.sessionId)
-      if (shouldResume) {
-        capturedSessionId = options.sessionId
-        // For resumed sessions, save user message immediately
-        if (options.userMessage) {
-          const userMsgWithCorrectSession: NormalizedMessage = {
-            ...options.userMessage,
-            sessionId: capturedSessionId,
-          }
-          await saveMessageToSession(capturedSessionId, userMsgWithCorrectSession)
-          userMessageSaved = true
-        }
-      }
-    }
 
     try {
       // Prepare SDK options
@@ -102,10 +78,13 @@ export const claudeProvider: ProviderAdapter = {
         }
       }
 
-      // Resume session if this is an existing SDK session
-      // Only resume if the session has had prior SDK interaction (has assistant messages)
-      if (shouldResume && options.sessionId) {
+      // claudecodeui pattern: always pass resume if there's a real session ID.
+      // The SDK will resume the thread if the session exists, or start fresh if not.
+      // No app-level storage check needed — the SDK is the source of truth.
+      const isRealSessionId = options.sessionId && !options.sessionId.startsWith('new-session-')
+      if (isRealSessionId) {
         sdkOptions.resume = options.sessionId
+        capturedSessionId = options.sessionId ?? null
         console.log('[ClaudeProvider] Resuming SDK session:', options.sessionId)
       } else {
         console.log('[ClaudeProvider] Starting new SDK session')
@@ -123,11 +102,10 @@ export const claudeProvider: ProviderAdapter = {
 
       console.log('[ClaudeProvider] Starting query with options:', {
         hasSessionId: !!options.sessionId,
-        shouldResume,
+        isResume: isRealSessionId,
         cwd: sdkOptions.cwd,
         model: sdkOptions.model,
         permissionMode: sdkOptions.permissionMode,
-        thinkingEnabled: options.thinkingEnabled,
       })
 
       // Create query instance
@@ -138,16 +116,13 @@ export const claudeProvider: ProviderAdapter = {
 
       // Stream responses
       for await (const message of queryInstance) {
-        // Capture session ID from SDK
-        // For new sessions, SDK returns session_id in the first message
-        // For resumed sessions, we already have the session_id
+        // Capture session ID from SDK (first message for new sessions)
         if (message.session_id && !capturedSessionId) {
           capturedSessionId = message.session_id
           activeQueries.set(capturedSessionId, queryInstance)
 
-          // Send session-created event for new sessions
-          // This tells the frontend what sessionId to use going forward
-          if (!shouldResume && !sessionCreatedSent) {
+          // New session: emit session_created so frontend updates its session ID
+          if (!sessionCreatedSent) {
             sessionCreatedSent = true
             sendMessage(ws, {
               kind: 'session_created',
@@ -158,28 +133,17 @@ export const claudeProvider: ProviderAdapter = {
               newSessionId: capturedSessionId,
               provider: 'claude',
             })
-
-            // Save user message with SDK's session_id for new sessions
-            if (options.userMessage && !userMessageSaved) {
-              const userMsgWithCorrectSession: NormalizedMessage = {
-                ...options.userMessage,
-                sessionId: capturedSessionId,
-              }
-              await saveMessageToSession(capturedSessionId, userMsgWithCorrectSession)
-              userMessageSaved = true
-            }
           }
-        } else if (shouldResume && capturedSessionId && !activeQueries.has(capturedSessionId)) {
-          // For resumed sessions, register the query instance
+        } else if (isRealSessionId && capturedSessionId && !activeQueries.has(capturedSessionId)) {
+          // Register resumed session's query instance for interrupt support
           activeQueries.set(capturedSessionId, queryInstance)
         }
 
         // Normalize SDK message
         const normalized = normalizeSDKMessage(message, capturedSessionId || 'unknown')
 
-        // Send all normalized messages
+        // Stream all normalized messages to the client
         for (const msg of normalized) {
-          // Add provider info
           const msgWithProvider: NormalizedMessage = {
             ...msg,
             provider: 'claude',
@@ -191,30 +155,10 @@ export const claudeProvider: ProviderAdapter = {
             accumulatedText += msg.content
           }
 
-          // Track if we got a text message from SDK result
           if (msg.kind === 'text' && msg.role === 'assistant') {
             hasTextMessageFromResult = true
           }
-
-          // Save persistable messages to session
-          if (capturedSessionId && shouldSaveMessage(msg)) {
-            await saveMessageToSession(capturedSessionId, msgWithProvider)
-          }
         }
-      }
-
-      // Save accumulated streaming text as final assistant message
-      if (capturedSessionId && accumulatedText.trim() && !hasTextMessageFromResult) {
-        const finalTextMessage: NormalizedMessage = {
-          kind: 'text',
-          id: randomUUID(),
-          sessionId: capturedSessionId,
-          timestamp: new Date().toISOString(),
-          role: 'assistant',
-          content: accumulatedText,
-          provider: 'claude',
-        }
-        await saveMessageToSession(capturedSessionId, finalTextMessage)
       }
 
       // Send complete message
@@ -228,15 +172,10 @@ export const claudeProvider: ProviderAdapter = {
       }
       sendMessage(ws, completeMsg)
 
-      if (capturedSessionId) {
-        await saveMessageToSession(capturedSessionId, completeMsg)
-      }
-
       console.log('[ClaudeProvider] Query completed:', capturedSessionId)
     } catch (error: any) {
       console.error('[ClaudeProvider] Error:', error)
 
-      // Send error message
       const errorMsg: NormalizedMessage = {
         kind: 'error',
         id: randomUUID(),
@@ -246,12 +185,7 @@ export const claudeProvider: ProviderAdapter = {
         provider: 'claude',
       }
       sendMessage(ws, errorMsg)
-
-      if (capturedSessionId) {
-        await saveMessageToSession(capturedSessionId, errorMsg)
-      }
     } finally {
-      // Cleanup
       if (capturedSessionId) {
         activeQueries.delete(capturedSessionId)
       }
@@ -278,16 +212,24 @@ export const claudeProvider: ProviderAdapter = {
   },
 
   async fetchHistory(sessionId: string, options: ProviderFetchOptions) {
-    const limit = options.limit ?? 50
-    const offset = options.offset ?? 0
-
-    const messages = await getSessionMessages(sessionId, { limit, offset })
-    const total = await getSessionMessagesCount(sessionId)
+    // Read directly from SDK's native project storage
+    const projectName = await detectSdkSession(sessionId)
+    if (projectName) {
+      const result = await loadSdkSessionMessages(projectName, sessionId, {
+        limit: options.limit ?? 50,
+        offset: options.offset ?? 0,
+      })
+      return {
+        messages: result.messages as NormalizedMessage[],
+        total: result.total,
+        hasMore: result.hasMore,
+      }
+    }
 
     return {
-      messages,
-      total,
-      hasMore: offset + messages.length < total,
+      messages: [],
+      total: 0,
+      hasMore: false,
     }
   },
 
@@ -302,16 +244,6 @@ export const claudeProvider: ProviderAdapter = {
       return null
     }
   },
-}
-
-/**
- * Determine if a message should be saved to session history
- */
-function shouldSaveMessage(msg: NormalizedMessage): boolean {
-  if (msg.kind === 'stream_delta') return false
-  if (msg.kind === 'stream_end') return false
-  if (msg.kind === 'session_created') return false
-  return true
 }
 
 /**

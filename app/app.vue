@@ -6,6 +6,7 @@ const { fetchAll: fetchCommands, commands } = useCommands()
 const { fetchAll: fetchPlugins, plugins } = usePlugins()
 const { fetchAll: fetchSkills, skills } = useSkills()
 const { fetchAll: fetchWorkflows, workflows } = useWorkflows()
+const { fetchServers, servers: mcpServers } = useMCP()
 
 const initialized = ref(false)
 const showSearch = ref(false)
@@ -105,7 +106,7 @@ if (import.meta.client) {
 
 onMounted(async () => {
   await loadConfig()
-  await Promise.all([fetchAgents(), fetchCommands(), fetchPlugins(), fetchSkills(), fetchWorkflows()])
+  await Promise.all([fetchAgents(), fetchCommands(), fetchPlugins(), fetchSkills(), fetchWorkflows(), fetchServers()])
   initialized.value = true
 })
 
@@ -116,6 +117,7 @@ const navLinks = [
   { label: 'Commands', icon: 'i-lucide-terminal', to: '/commands' },
   { label: 'Skills', icon: 'i-lucide-sparkles', to: '/skills' },
   { label: 'Plugins', icon: 'i-lucide-puzzle', to: '/plugins' },
+  { label: 'MCP Servers', icon: 'i-lucide-server', to: '/mcp' },
 ]
 
 const navSecondary = [
@@ -136,6 +138,7 @@ function badgeFor(to: string) {
   if (to === '/skills') return skills.value.length || null
   if (to === '/plugins') return plugins.value.length || null
   if (to === '/workflows') return workflows.value.length || null
+  if (to === '/mcp') return mcpServers.value.length || null
   return null
 }
 </script>

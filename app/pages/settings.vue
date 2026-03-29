@@ -98,6 +98,11 @@ async function removePlugin(name: string) {
 const statusLineType = ref('')
 const statusLineCommand = ref('')
 
+const statusLineOptions = [
+  { value: '', label: 'None', description: 'Disable the status line' },
+  { value: 'command', label: 'Command', description: 'Run a bash command to get status' },
+]
+
 watch(settings, (val) => {
   if (val?.statusLine) {
     statusLineType.value = val.statusLine.type || ''
@@ -130,16 +135,16 @@ const hooks = computed(() => {
 })
 
 const showAddHookModal = ref(false)
-const newHookEvent = ref('')
+const newHookEvent = ref<string | undefined>('')
 const newHookCommand = ref('')
 const newHookMatcher = ref('')
 
 const hookEventOptions = [
-  { value: 'PreToolUse', label: 'Before Claude uses a tool' },
-  { value: 'PostToolUse', label: 'After Claude uses a tool' },
-  { value: 'Notification', label: 'When a notification is sent' },
-  { value: 'Stop', label: 'When Claude finishes' },
-  { value: 'SubagentStop', label: 'When a sub-agent finishes' },
+  { value: 'PreToolUse', label: 'Before Claude uses a tool', description: 'Triggered just before a tool is executed' },
+  { value: 'PostToolUse', label: 'After Claude uses a tool', description: 'Triggered after a tool execution completes' },
+  { value: 'Notification', label: 'When a notification is sent', description: 'Triggered when the system sends a notification' },
+  { value: 'Stop', label: 'When Claude finishes', description: 'Triggered when the session finishes' },
+  { value: 'SubagentStop', label: 'When a sub-agent finishes', description: 'Triggered when a background sub-agent finishes' },
 ]
 
 const hookEventLabels: Record<string, string> = {
@@ -287,10 +292,7 @@ const lineCount = computed(() => rawJson.value.split('\n').length)
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div class="field-group">
             <label class="field-label">Type</label>
-            <select v-model="statusLineType" class="field-select">
-              <option value="">None</option>
-              <option value="command">command</option>
-            </select>
+            <USelectDropdown v-model="statusLineType" :options="statusLineOptions" />
           </div>
           <div class="field-group">
             <label class="field-label">Command</label>
@@ -497,10 +499,7 @@ const lineCount = computed(() => rawJson.value.split('\n').length)
 
           <div class="field-group">
             <label class="field-label" data-required>When this happens</label>
-            <select v-model="newHookEvent" class="field-select">
-              <option value="" disabled>Select an event...</option>
-              <option v-for="opt in hookEventOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-            </select>
+            <USelectDropdown v-model="newHookEvent" :options="hookEventOptions" placeholder="Select an event..." />
           </div>
 
           <div class="field-group">

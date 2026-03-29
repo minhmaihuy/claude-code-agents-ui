@@ -118,21 +118,25 @@ useUnsavedChanges(isDirty)
         <span v-if="isDirty" class="text-[9px] font-mono px-1.5 py-px rounded-full" style="background: rgba(229, 169, 62, 0.1); color: var(--accent);">Unsaved</span>
       </div>
       <div class="flex items-center gap-2">
-        <button
-          class="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all"
-          :style="{
-            background: isDirty ? 'var(--accent)' : 'var(--surface-raised)',
-            color: isDirty ? 'white' : 'var(--text-disabled)',
-            border: isDirty ? 'none' : '1px solid var(--border-subtle)',
-          }"
+        <UButton
+          :label="saving ? 'Saving...' : 'Save'"
+          icon="i-lucide-save"
+          size="sm"
+          :variant="isDirty ? 'solid' : 'soft'"
+          :color="isDirty ? 'primary' : 'neutral'"
           :disabled="!isDirty || saving"
+          :loading="saving"
           @click="save"
-        >
-          {{ saving ? 'Saving...' : 'Save' }}
-        </button>
-        <button class="p-1.5 rounded-lg hover-bg transition-all" style="color: var(--text-disabled);" title="Delete agent" @click="showDeleteConfirm = true">
-          <UIcon name="i-lucide-trash-2" class="size-4" />
-        </button>
+        />
+        <UButton
+          label="Delete"
+          icon="i-lucide-trash-2"
+          size="sm"
+          variant="ghost"
+          color="error"
+          title="Delete agent"
+          @click="showDeleteConfirm = true"
+        />
       </div>
     </div>
 

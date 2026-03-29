@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveClaudePath } from '../../utils/claudeDir'
 import { parseFrontmatter } from '../../utils/frontmatter'
+import { resolvePluginInstallPath } from '../../utils/marketplace'
 import type { PluginDetail, SkillFrontmatter } from '~/types'
 
 interface InstalledEntry {
@@ -43,14 +44,15 @@ export default defineEventHandler(async (event) => {
 
   const entry = entries[0]
   const [name, marketplace] = id.split('@')
-  const pluginJsonPath = join(entry.installPath, '.claude-plugin', 'plugin.json')
+  const installPath = resolvePluginInstallPath(id, entry.installPath)
+  const pluginJsonPath = join(installPath, '.claude-plugin', 'plugin.json')
   const meta = await readJson<PluginJson>(pluginJsonPath)
 
   const settings = await readJson<{ enabledPlugins?: Record<string, boolean> }>(settingsPath)
 
   // Load skills
   const skillDetails = []
-  const skillsDir = join(entry.installPath, 'skills')
+  const skillsDir = join(installPath, 'skills')
   if (existsSync(skillsDir)) {
     const skillDirs = await readdir(skillsDir, { withFileTypes: true })
     for (const dir of skillDirs) {

@@ -4,7 +4,7 @@ import type { Skill, SkillFrontmatter } from '~/types'
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const { fetchOne, update, remove } = useSkills()
+const { skills, fetchOne, fetchOneByPath, update, remove } = useSkills()
 const { prefillSkill } = useChat()
 const { agents } = useAgents()
 
@@ -34,7 +34,13 @@ function restoreDraft() {
 
 onMounted(async () => {
   try {
-    skill.value = await fetchOne(slug)
+    // Try to find skill in local state to get filePath
+    const localSkill = skills.value.find(s => s.slug === slug)
+    if (localSkill?.filePath) {
+      skill.value = await fetchOneByPath(slug, localSkill.filePath)
+    } else {
+      skill.value = await fetchOne(slug)
+    }
     frontmatter.value = { ...skill.value.frontmatter }
     body.value = skill.value.body
   } catch {
@@ -121,9 +127,14 @@ const isDirty = computed(() => {
 
 useUnsavedChanges(isDirty)
 
-const agentOptions = computed(() =>
-  agents.value.map(a => a.frontmatter.name)
-)
+const agentOptions = computed(() => [
+  { value: undefined, label: 'None (Global)', description: 'Available to all agents' },
+  ...agents.value.map(a => ({
+    value: a.frontmatter.name,
+    label: a.frontmatter.name,
+    description: a.frontmatter.description
+  }))
+])
 </script>
 
 <template>
@@ -146,21 +157,25 @@ const agentOptions = computed(() =>
           :disabled="!skill"
           @click="prefillSkill(skill!.frontmatter.name)"
         />
-        <a
+        <UButton
+          label="Download"
+          icon="i-lucide-download"
+          size="sm"
+          variant="soft"
+          color="neutral"
+          as="a"
           :href="`/api/skills/${slug}/export`"
           download
-          class="text-[12px] px-2 py-1 rounded focus-ring text-label hover-bg"
-          title="Download .md file"
-        >
-          <UIcon name="i-lucide-download" class="size-3.5" />
-        </a>
+        />
         <template v-if="!isImported">
-          <button
-            class="text-[12px] px-2 py-1 rounded focus-ring text-label"
+          <UButton
+            label="Delete"
+            icon="i-lucide-trash-2"
+            size="sm"
+            variant="ghost"
+            color="error"
             @click="showDeleteConfirm = true"
-          >
-            Delete
-          </button>
+          />
           <span v-if="isDirty" class="text-[10px] font-mono unsaved-pulse" style="color: var(--warning);">unsaved</span>
           <UButton label="Save" icon="i-lucide-save" size="sm" :loading="saving" @click="save" />
         </template>
@@ -200,11 +215,11 @@ const agentOptions = computed(() =>
 
       <!-- Configuration -->
       <div
-        class="rounded-xl overflow-hidden"
+        class="rounded-xl relative z-20"
         style="border: 1px solid var(--border-subtle);"
       >
         <!-- Skill identity banner -->
-        <div class="relative px-5 pt-6 pb-5" style="background: var(--surface-raised);">
+        <div class="relative px-5 pt-6 pb-5 rounded-t-xl overflow-hidden" style="background: var(--surface-raised);">
           <!-- Top accent bar -->
           <div
             class="absolute inset-x-0 top-0 h-[3px]"
@@ -240,7 +255,7 @@ const agentOptions = computed(() =>
         </div>
 
         <!-- Form fields -->
-        <div class="px-5 py-4 space-y-4" style="background: var(--surface-base); border-top: 1px solid var(--border-subtle);">
+        <div class="px-5 py-4 space-y-4 rounded-b-xl" style="background: var(--surface-base); border-top: 1px solid var(--border-subtle);">
           <h3 class="text-section-label">Configuration</h3>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -256,16 +271,14 @@ const agentOptions = computed(() =>
             </div>
             <div class="field-group">
               <label class="field-label">Agent</label>
-              <input
-                v-model="frontmatter.agent"
-                class="field-input"
+              <USelectDropdown
+                :model-value="frontmatter.agent"
+                :options="agentOptions"
                 :disabled="isImported"
-                placeholder="Optional — link to an agent"
-                :list="agentOptions.length > 0 ? 'agent-opts-detail' : undefined"
+                placeholder="Select an agent..."
+                icon="i-lucide-user"
+                @update:model-value="frontmatter.agent = $event"
               />
-              <datalist v-if="agentOptions.length > 0" id="agent-opts-detail">
-                <option v-for="a in agentOptions" :key="a" :value="a" />
-              </datalist>
               <span class="field-hint">Link this skill to a specific agent. The skill's instructions will be loaded when that agent is active.</span>
             </div>
           </div>

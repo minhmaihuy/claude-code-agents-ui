@@ -1,10 +1,10 @@
 <script setup lang="ts">
 const props = defineProps<{
-  type: 'agents' | 'skills'
+  type: 'agents' | 'skills' | 'mcp'
 }>()
 
 const emit = defineEmits<{
-  imported: [item: { slug: string }]
+  imported: [item: { name?: string; slug?: string }]
 }>()
 
 const toast = useToast()
@@ -24,19 +24,20 @@ function onFileSelect(e: Event) {
 }
 
 async function handleFile(file: File) {
-  if (!file.name.endsWith('.md')) {
-    toast.add({ title: 'Invalid file', description: 'Please upload a .md file', color: 'error' })
+  const extension = props.type === 'mcp' ? '.json' : '.md'
+  if (!file.name.endsWith(extension)) {
+    toast.add({ title: 'Invalid file', description: `Please upload a ${extension} file`, color: 'error' })
     return
   }
 
   importing.value = true
   try {
     const content = await file.text()
-    const result = await $fetch<{ slug: string }>(`/api/${props.type}/import`, {
+    const result = await $fetch<any>(`/api/${props.type === 'mcp' ? 'mcp/import' : props.type + '/import'}`, {
       method: 'POST',
       body: { content },
     })
-    toast.add({ title: `${props.type === 'agents' ? 'Agent' : 'Skill'} imported`, color: 'success' })
+    toast.add({ title: `${props.type === 'mcp' ? 'MCP server(s)' : (props.type === 'agents' ? 'Agent' : 'Skill')} imported`, color: 'success' })
     emit('imported', result)
   } catch (e: any) {
     toast.add({ title: 'Import failed', description: e.data?.message || e.message, color: 'error' })
@@ -62,7 +63,7 @@ async function handleFile(file: File) {
     <input
       ref="fileInput"
       type="file"
-      accept=".md"
+      :accept="type === 'mcp' ? '.json' : '.md'"
       class="hidden"
       @change="onFileSelect"
     />
@@ -75,10 +76,10 @@ async function handleFile(file: File) {
     <div v-else class="flex flex-col items-center gap-2">
       <UIcon name="i-lucide-upload" class="size-6" style="color: var(--text-disabled);" />
       <p class="text-[13px] text-label">
-        Drop a <code class="font-mono text-[11px] px-1 py-px rounded" style="background: var(--badge-subtle-bg);">.md</code> file here or click to browse
+        Drop a <code class="font-mono text-[11px] px-1 py-px rounded" style="background: var(--badge-subtle-bg);">{{ type === 'mcp' ? '.json' : '.md' }}</code> file here or click to browse
       </p>
       <p class="text-[11px] text-meta">
-        Import an {{ type === 'agents' ? 'agent' : 'skill' }} exported from another setup
+        Import {{ type === 'mcp' ? 'MCP configuration' : (type === 'agents' ? 'an agent' : 'a skill') }} exported from another setup
       </p>
     </div>
   </div>

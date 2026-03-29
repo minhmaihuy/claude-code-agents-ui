@@ -11,10 +11,12 @@ export function extractRelationships(
   commands: { slug: string; body: string; frontmatter: Record<string, unknown> }[],
   skills: { slug: string; body: string; frontmatter: Record<string, unknown> }[] = [],
   plugins: PluginEntry[] = [],
+  mcpServers: { name: string }[] = [],
 ): Relationship[] {
   const relationships: Relationship[] = []
   const agentNames = new Set(agents.map(a => a.slug))
   const skillSlugs = new Set(skills.map(s => s.slug))
+  const mcpNames = new Set(mcpServers.map(s => s.name))
   const seen = new Set<string>()
 
   function add(rel: Relationship) {
@@ -51,6 +53,21 @@ export function extractRelationships(
           targetSlug: name,
           type: 'spawns',
           evidence: m[0],
+        })
+      }
+    }
+
+    // Scan for MCP mentions (mcp__server_name__tool_name)
+    for (const mcpName of mcpNames) {
+      const regex = new RegExp(`mcp__${mcpName}__`, 'gi')
+      if (regex.test(cmd.body)) {
+        add({
+          sourceType: 'command',
+          sourceSlug: cmd.slug,
+          targetType: 'mcp' as any,
+          targetSlug: mcpName,
+          type: 'spawns',
+          evidence: `uses tools from "${mcpName}" MCP server`,
         })
       }
     }
@@ -107,6 +124,21 @@ export function extractRelationships(
         })
       }
     }
+
+    // Scan agent body for MCP mentions
+    for (const mcpName of mcpNames) {
+      const regex = new RegExp(`mcp__${mcpName}__`, 'gi')
+      if (regex.test(agent.body)) {
+        add({
+          sourceType: 'agent',
+          sourceSlug: agent.slug,
+          targetType: 'mcp' as any,
+          targetSlug: mcpName,
+          type: 'spawns',
+          evidence: `uses tools from "${mcpName}" MCP server`,
+        })
+      }
+    }
   }
 
   // Skills: check frontmatter.agent reference to link skill -> agent
@@ -135,6 +167,21 @@ export function extractRelationships(
           targetSlug: agentSlug,
           type: 'spawns',
           evidence: `mentions "${agentSlug}"`,
+        })
+      }
+    }
+
+    // Scan skill body for MCP mentions
+    for (const mcpName of mcpNames) {
+      const regex = new RegExp(`mcp__${mcpName}__`, 'gi')
+      if (regex.test(skill.body)) {
+        add({
+          sourceType: 'skill',
+          sourceSlug: skill.slug,
+          targetType: 'mcp' as any,
+          targetSlug: mcpName,
+          type: 'spawns',
+          evidence: `uses tools from "${mcpName}" MCP server`,
         })
       }
     }

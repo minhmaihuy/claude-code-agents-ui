@@ -8,6 +8,8 @@ import { createInterface } from 'readline'
 import { join } from 'path'
 import { homedir } from 'os'
 
+import { getClaudeDir } from './claudeDir'
+
 export interface ClaudeCodeProject {
   name: string
   path: string
@@ -44,6 +46,70 @@ export interface ClaudeCodeMessage {
 }
 
 const projectDirectoryCache = new Map<string, string>()
+
+interface SessionNames {
+  [sessionId: string]: {
+    summary: string
+    updatedAt: string
+  }
+}
+
+/**
+ * Load custom session names from storage
+ */
+async function loadSessionNames(): Promise<SessionNames> {
+  const filePath = join(getClaudeDir(), 'custom-session-names.json')
+  try {
+    const data = await fs.readFile(filePath, 'utf8')
+    return JSON.parse(data) as SessionNames
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Save custom session names to storage
+ */
+async function saveSessionNames(names: SessionNames): Promise<void> {
+  const filePath = join(getClaudeDir(), 'custom-session-names.json')
+  await fs.writeFile(filePath, JSON.stringify(names, null, 2), 'utf8')
+}
+
+/**
+ * Set a custom name for a session
+ */
+export async function setSessionName(sessionId: string, summary: string): Promise<void> {
+  const names = await loadSessionNames()
+  names[sessionId] = {
+    summary,
+    updatedAt: new Date().toISOString()
+  }
+  await saveSessionNames(names)
+}
+
+/**
+ * Delete a custom name for a session
+ */
+export async function deleteSessionName(sessionId: string): Promise<void> {
+  const names = await loadSessionNames()
+  if (names[sessionId]) {
+    delete names[sessionId]
+    await saveSessionNames(names)
+  }
+}
+
+/**
+ * Apply custom names to sessions
+ */
+async function applyCustomSessionNames(sessions: ClaudeCodeSession[]): Promise<void> {
+  if (sessions.length === 0) return
+  const names = await loadSessionNames()
+  for (const session of sessions) {
+    if (names[session.id]) {
+      session.summary = names[session.id].summary
+    }
+  }
+}
 
 /**
  * Get the Claude projects directory path
@@ -383,6 +449,7 @@ export async function getClaudeCodeSessions(
 
     const total = visibleSessions.length
     const paginatedSessions = visibleSessions.slice(offset, offset + limit)
+    await applyCustomSessionNames(paginatedSessions)
     const hasMore = offset + limit < total
 
     return { sessions: paginatedSessions, hasMore, total }
@@ -462,5 +529,141 @@ export async function getClaudeCodeSessionMessages(
   } catch (error: any) {
     console.error(`Error reading messages for session ${sessionId}:`, error)
     return { messages: [], total: 0, hasMore: false }
+  }
+}
+
+/**
+ * Delete a session from a project
+ */
+export async function deleteClaudeCodeSession(projectName: string, sessionId: string): Promise<boolean> {
+  const projectDir = join(getClaudeProjectsDir(), projectName)
+
+  // Remove from custom names store
+  await deleteSessionName(sessionId)
+
+  try {
+    await fs.access(projectDir)
+    const files = await fs.readdir(projectDir)
+    const jsonlFiles = files.filter(file => file.endsWith('.jsonl') && !file.startsWith('agent-'))
+
+    if (jsonlFiles.length === 0) {
+      return false
+    }
+
+    let deleted = false
+
+    // Process all JSONL files to find and remove messages for this session
+    for (const file of jsonlFiles) {
+      const jsonlFile = join(projectDir, file)
+      const content = await fs.readFile(jsonlFile, 'utf8')
+      const lines = content.split('\n').filter(line => line.trim())
+
+      // Check if this file contains the session
+      const hasSession = lines.some(line => {
+        try {
+          const data = JSON.parse(line)
+          return data.sessionId === sessionId
+        } catch {
+          return false
+        }
+      })
+
+      if (hasSession) {
+        // Filter out all entries for this session
+        const filteredLines = lines.filter(line => {
+          try {
+            const data = JSON.parse(line)
+            return data.sessionId !== sessionId
+          } catch {
+            return true // Keep malformed lines
+          }
+        })
+
+        // Write back the filtered content
+        if (filteredLines.length === 0) {
+          // If no lines left, we could delete the file, but it might be better to just keep it empty
+          await fs.writeFile(jsonlFile, '', 'utf8')
+        } else {
+          await fs.writeFile(jsonlFile, filteredLines.join('\n') + '\n', 'utf8')
+        }
+        deleted = true
+      }
+    }
+
+    return deleted
+  } catch (error) {
+    console.error(`Error deleting session ${sessionId} from project ${projectName}:`, error)
+    return false
+  }
+}
+
+/**
+ * Rename a session summary in the JSONL files
+ * (Note: This is expensive as it modifies history. Alternatively, we could use a sidecar DB)
+ */
+export async function renameClaudeCodeSession(projectName: string, sessionId: string, newSummary: string): Promise<boolean> {
+  const projectDir = join(getClaudeProjectsDir(), projectName)
+
+  // Save to persistent custom names store
+  await setSessionName(sessionId, newSummary)
+
+  try {
+    await fs.access(projectDir)
+    const files = await fs.readdir(projectDir)
+    const jsonlFiles = files.filter(file => file.endsWith('.jsonl') && !file.startsWith('agent-'))
+
+    if (jsonlFiles.length === 0) {
+      return false
+    }
+
+    let renamed = false
+    let lastFileForSession = ''
+
+    // Process all JSONL files to find and update the summary for this session
+    for (const file of jsonlFiles) {
+      const jsonlFile = join(projectDir, file)
+      const content = await fs.readFile(jsonlFile, 'utf8')
+      const lines = content.split('\n').filter(line => line.trim())
+
+      let fileModified = false
+      const updatedLines = lines.map(line => {
+        try {
+          const data = JSON.parse(line)
+          if (data.sessionId === sessionId) {
+            lastFileForSession = jsonlFile
+            if (data.type === 'summary') {
+              data.summary = newSummary
+              fileModified = true
+              return JSON.stringify(data)
+            }
+          }
+          return line
+        } catch {
+          return line
+        }
+      })
+
+      if (fileModified) {
+        await fs.writeFile(jsonlFile, updatedLines.join('\n') + '\n', 'utf8')
+        renamed = true
+      }
+    }
+
+    // If we didn't find a summary entry to modify, append a new summary entry to the last file where this session was seen
+    if (!renamed && lastFileForSession) {
+      const summaryEntry = {
+        type: 'summary',
+        sessionId: sessionId,
+        summary: newSummary,
+        timestamp: new Date().toISOString()
+      }
+      await fs.appendFile(lastFileForSession, JSON.stringify(summaryEntry) + '\n', 'utf8')
+      renamed = true
+    }
+
+    return renamed
+  } catch (error) {
+    console.error(`Error renaming session ${sessionId} in project ${projectName}:`, error)
+    return false
   }
 }

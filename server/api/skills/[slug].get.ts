@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveClaudePath } from '../../utils/claudeDir'
 import { parseFrontmatter } from '../../utils/frontmatter'
+import { resolvePluginInstallPath } from '../../utils/marketplace'
 import type { SkillFrontmatter } from '~/types'
 
 interface InstalledEntry {
@@ -49,19 +50,56 @@ export default defineEventHandler(async (event) => {
         ? join(entry.localPath, entry.targetPath)
         : entry.localPath
 
-      // Recursively search for a SKILL.md in a directory matching the slug
+      // Recursively search for a markdown skill matching the slug
       const findSkill = async (dir: string): Promise<string | null> => {
         if (!existsSync(dir)) return null
         const items = await readdir(dir, { withFileTypes: true })
         for (const item of items) {
-          if (!item.isDirectory() || item.name.startsWith('.')) continue
+          if (item.name.startsWith('.')) continue
           const fullPath = join(dir, item.name)
-          if (item.name === slug) {
-            const skillPath = join(fullPath, 'SKILL.md')
-            if (existsSync(skillPath)) return skillPath
+
+          if (item.isDirectory()) {
+            const found = await findSkill(fullPath)
+            if (found) return found
+            continue
           }
-          const found = await findSkill(fullPath)
-          if (found) return found
+
+          if (!item.isFile() || !item.name.toLowerCase().endsWith('.md')) continue
+
+          // Check if this file corresponds to the requested slug
+          const rel = relative(scanRoot, fullPath)
+          const parts = rel.split(/[\\/]/).filter(Boolean)
+          const fileName = parts.at(-1) || item.name
+          const parentDir = parts.length >= 2 ? parts.at(-2) : undefined
+
+          let currentSlug =
+            fileName.toLowerCase() === 'skill.md' && parentDir
+              ? parentDir
+              : fileName.replace(/\.md$/i, '')
+
+          // Use same slug generation logic as indexer
+          if ((currentSlug.toLowerCase() === 'skill' || !currentSlug)) {
+            try {
+              const raw = await readFile(fullPath, 'utf-8')
+              const { frontmatter } = parseFrontmatter<SkillFrontmatter>(raw)
+              if (frontmatter.name) {
+                currentSlug = frontmatter.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+              }
+            } catch {
+              // Ignore parse errors here
+            }
+          }
+
+          if (currentSlug === slug) {
+            // Verify frontmatter before claiming it's a skill
+            try {
+              const raw = await readFile(fullPath, 'utf-8')
+              const { frontmatter } = parseFrontmatter<SkillFrontmatter>(raw)
+              if (frontmatter.name && frontmatter.description) return fullPath
+            } catch {
+              // Not a valid skill file
+            }
+          }
         }
         return null
       }
@@ -87,11 +125,12 @@ export default defineEventHandler(async (event) => {
   const installed = await readJson<{ plugins: Record<string, InstalledEntry[]> }>(installedPath)
 
   if (installed?.plugins) {
-    for (const entries of Object.values(installed.plugins)) {
+    for (const [pluginId, entries] of Object.entries(installed.plugins)) {
       const entry = entries[0]
       if (!entry) continue
 
-      const pluginSkillsDir = join(entry.installPath, 'skills')
+      const installPath = resolvePluginInstallPath(pluginId, entry.installPath)
+      const pluginSkillsDir = join(installPath, 'skills')
       if (!existsSync(pluginSkillsDir)) continue
 
       const skillPath = join(pluginSkillsDir, slug, 'SKILL.md')

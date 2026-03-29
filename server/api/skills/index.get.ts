@@ -3,6 +3,7 @@ import { join, relative } from 'node:path'
 import { existsSync } from 'node:fs'
 import { resolveClaudePath } from '../../utils/claudeDir'
 import { parseFrontmatter } from '../../utils/frontmatter'
+import { resolvePluginInstallPath } from '../../utils/marketplace'
 import type { Skill, SkillFrontmatter } from '~/types'
 
 interface InstalledEntry {
@@ -35,9 +36,15 @@ export default defineEventHandler(async () => {
       const raw = await readFile(skillPath, 'utf-8')
       const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(raw)
 
+      let slug = dir.name
+      // If directory is literally 'SKILL' or empty, use frontmatter name as fallback
+      if ((slug.toLowerCase() === 'skill' || !slug) && frontmatter.name) {
+        slug = frontmatter.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      }
+
       skills.push({
-        slug: dir.name,
-        frontmatter: { name: dir.name, ...frontmatter },
+        slug,
+        frontmatter: { name: slug, ...frontmatter },
         body,
         filePath: skillPath,
       })
@@ -53,10 +60,11 @@ export default defineEventHandler(async () => {
       const entry = entries[0]
       if (!entry) continue
 
-      const pluginSkillsDir = join(entry.installPath, 'skills')
-      if (!existsSync(pluginSkillsDir)) continue
-
+      const installPath = resolvePluginInstallPath(pluginId, entry.installPath)
+      const pluginSkillsDir = join(installPath, 'skills')
       const [pluginName] = pluginId.split('@')
+
+      if (!existsSync(pluginSkillsDir)) continue
 
       const skillDirs = await readdir(pluginSkillsDir, { withFileTypes: true })
       for (const dir of skillDirs) {
@@ -67,10 +75,15 @@ export default defineEventHandler(async () => {
         const raw = await readFile(skillPath, 'utf-8')
         const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(raw)
 
+        let slug = dir.name
+        if ((slug.toLowerCase() === 'skill' || !slug) && frontmatter.name) {
+          slug = frontmatter.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        }
+
         skills.push({
-          slug: dir.name,
+          slug,
           frontmatter: {
-            name: dir.name,
+            name: slug,
             ...frontmatter,
             // Tag with plugin name as agent if not already set
             agent: frontmatter.agent || pluginName,
@@ -184,10 +197,15 @@ export default defineEventHandler(async () => {
           const fileName = parts.at(-1) || item.name
           const parentDir = parts.length >= 2 ? parts.at(-2) : undefined
 
-          const slug =
+          let slug =
             fileName.toLowerCase() === 'skill.md' && parentDir
               ? parentDir
               : fileName.replace(/\.md$/i, '')
+
+          // If slug is 'SKILL' or empty, use frontmatter name
+          if ((slug.toLowerCase() === 'skill' || !slug) && frontmatter.name) {
+            slug = frontmatter.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+          }
 
           if (!slug) continue
           if (!shouldIncludeSkill(slug)) continue

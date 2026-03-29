@@ -14,15 +14,20 @@ const { agents } = useAgents()
 const { commands } = useCommands()
 const { skills } = useSkills()
 const { plugins } = usePlugins()
+const { servers: mcpServers } = useMCP()
 const router = useRouter()
 
 const relationships = ref<Relationship[]>([])
 const loading = ref(true)
 const showLegend = ref(true)
 
+const { workingDir } = useWorkingDir()
+
 onMounted(async () => {
   try {
-    relationships.value = await $fetch<Relationship[]>('/api/relationships')
+    relationships.value = await $fetch<Relationship[]>('/api/relationships', {
+      query: { workingDir: workingDir.value }
+    })
   } finally {
     loading.value = false
   }
@@ -40,6 +45,7 @@ const columnLabels: Record<string, { label: string; icon: string }> = {
   skill: { label: 'Skills', icon: 'zap' },
   agent: { label: 'Agents', icon: 'cpu' },
   plugin: { label: 'Plugins', icon: 'puzzle' },
+  mcp: { label: 'MCP Servers', icon: 'server' },
 }
 
 // --- Connected node IDs (for orphan detection) ---
@@ -59,6 +65,7 @@ const columns = computed(() => {
   if (skills.value.length > 0) cols.push({ type: 'skill', items: skills.value })
   if (agents.value.length > 0) cols.push({ type: 'agent', items: agents.value })
   if (plugins.value.length > 0) cols.push({ type: 'plugin', items: plugins.value })
+  if (mcpServers.value.length > 0) cols.push({ type: 'mcp', items: mcpServers.value })
   return cols
 })
 
@@ -81,7 +88,7 @@ const nodes = computed(() => {
 
     col.items.forEach((item, i) => {
       const y = i * Y_GAP + 40
-      const nodeId = col.type === 'plugin' ? `plugin-${item.id}` : `${col.type}-${item.slug}`
+      const nodeId = col.type === 'plugin' ? `plugin-${item.id}` : (col.type === 'mcp' ? `mcp-${item.name}` : `${col.type}-${item.slug}`)
       const isOrphan = !connectedNodeIds.value.has(nodeId)
 
       if (col.type === 'agent') {
@@ -138,6 +145,19 @@ const nodes = computed(() => {
             id: item.id,
             enabled: item.enabled,
             skillCount: item.skills.length,
+            orphan: isOrphan,
+          },
+        })
+      } else if (col.type === 'mcp') {
+        result.push({
+          id: nodeId,
+          type: 'mcp',
+          position: { x, y },
+          class: isOrphan ? 'graph-orphan' : '',
+          data: {
+            label: item.name,
+            name: item.name,
+            scope: item.scope,
             orphan: isOrphan,
           },
         })
@@ -350,6 +370,7 @@ function onNodeClick(first: unknown, second?: unknown) {
   else if (node.type === 'command') router.push(`/commands/${node.data.slug}`)
   else if (node.type === 'skill') router.push(`/skills/${node.data.slug}`)
   else if (node.type === 'plugin') router.push(`/plugins/${node.data.id}`)
+  else if (node.type === 'mcp') router.push({ path: `/mcp/${encodeURIComponent(node.data.name)}`, query: { scope: node.data.scope } })
 }
 </script>
 
@@ -475,6 +496,27 @@ function onNodeClick(first: unknown, second?: unknown) {
           </div>
         </template>
 
+        <!-- MCP node -->
+        <template #node-mcp="{ data }">
+          <div class="graph-node graph-node--mcp" :class="{ 'graph-node--orphan': data.orphan }">
+            <div class="flex items-center gap-1.5">
+              <UIcon name="i-lucide-server" class="size-3 shrink-0" style="color: var(--accent);" />
+              <span class="font-mono text-[11px] font-medium truncate" style="color: var(--text-secondary);">
+                {{ data.label }}
+              </span>
+              <span
+                class="ml-auto text-[8px] font-mono px-1 py-px rounded-full shrink-0 uppercase border"
+                :style="{
+                  borderColor: data.scope === 'global' ? 'rgba(229,169,62,0.3)' : 'var(--border-subtle)',
+                  color: data.scope === 'global' ? 'var(--accent)' : 'var(--text-disabled)',
+                }"
+              >
+                {{ data.scope }}
+              </span>
+            </div>
+          </div>
+        </template>
+
         <Controls position="bottom-right" />
         <MiniMap position="top-right" :style="{ marginTop: '64px' }" />
       </VueFlow>
@@ -511,6 +553,10 @@ function onNodeClick(first: unknown, second?: unknown) {
           <div class="flex items-center gap-2">
             <UIcon name="i-lucide-puzzle" class="size-3" style="color: var(--model-sonnet);" />
             <span style="color: var(--text-tertiary);">Plugin</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <UIcon name="i-lucide-server" class="size-3" style="color: var(--accent);" />
+            <span style="color: var(--text-tertiary);">MCP Server</span>
           </div>
           <hr style="border-color: var(--border-subtle);" />
           <div class="flex items-center gap-2">

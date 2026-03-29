@@ -120,8 +120,16 @@ function startEditing(session: typeof sessions.value[0], event: Event) {
   editingInput.value = session.summary || ''
   // Focus the input after Vue updates the DOM
   nextTick(() => {
-    editInputRef.value?.focus()
-    editInputRef.value?.select()
+    // If editInputRef is bound to a component, we need to access its el
+    const el = editInputRef.value as any
+    if (el) {
+      if (typeof el.focus === 'function') {
+        el.focus()
+        if (typeof el.select === 'function') el.select()
+      } else if (el.$el && typeof el.$el.focus === 'function') {
+        el.$el.focus()
+      }
+    }
   })
 }
 

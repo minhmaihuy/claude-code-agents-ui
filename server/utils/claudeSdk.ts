@@ -4,7 +4,6 @@ import fs from 'node:fs/promises'
 import { normalizeSDKMessage } from './messageNormalizer'
 import { resolveClaudePath } from './claudeDir'
 import { parseFrontmatter } from './frontmatter'
-import { saveMessageToSession } from './chatSessionStorage'
 import type { Peer } from 'crossws'
 import type { NormalizedMessage } from '~/types'
 
@@ -62,7 +61,8 @@ export async function queryClaudeChat(
       }
     }
 
-    // Resume session if ID provided
+    // claudecodeui pattern: always pass resume if there's a real session ID.
+    // No app-level storage check needed — the SDK is the source of truth.
     if (options.sessionId) {
       sdkOptions.resume = options.sessionId
     }
@@ -120,30 +120,10 @@ export async function queryClaudeChat(
         if (msg.kind === 'text' && msg.role === 'assistant') {
           hasTextMessageFromResult = true
         }
-
-        // Save persistable messages to session
-        // Skip ephemeral messages (stream_delta, stream_end, session_created)
-        if (capturedSessionId && shouldSaveMessage(msg)) {
-          await saveMessageToSession(capturedSessionId, msg)
-        }
       }
     }
 
-    // Save accumulated streaming text as final assistant message
-    // Only if we didn't already get a text message from the SDK result
-    if (capturedSessionId && accumulatedText.trim() && !hasTextMessageFromResult) {
-      const finalTextMessage: NormalizedMessage = {
-        kind: 'text',
-        id: randomUUID(),
-        sessionId: capturedSessionId,
-        timestamp: new Date().toISOString(),
-        role: 'assistant',
-        content: accumulatedText,
-      }
-      await saveMessageToSession(capturedSessionId, finalTextMessage)
-    }
-
-    // Send and save complete message
+    // Send complete message
     const completeMsg: NormalizedMessage = {
       kind: 'complete',
       id: randomUUID(),
@@ -153,15 +133,10 @@ export async function queryClaudeChat(
     }
     sendMessage(ws, completeMsg)
 
-    if (capturedSessionId) {
-      await saveMessageToSession(capturedSessionId, completeMsg)
-    }
-
     console.log('[Claude SDK] Query completed:', capturedSessionId)
   } catch (error: any) {
     console.error('[Claude SDK] Error:', error)
 
-    // Send and save error message
     const errorMsg: NormalizedMessage = {
       kind: 'error',
       id: randomUUID(),
@@ -170,30 +145,12 @@ export async function queryClaudeChat(
       content: error.message || 'An error occurred',
     }
     sendMessage(ws, errorMsg)
-
-    if (capturedSessionId) {
-      await saveMessageToSession(capturedSessionId, errorMsg)
-    }
   } finally {
     // Cleanup
     if (capturedSessionId) {
       activeQueries.delete(capturedSessionId)
     }
   }
-}
-
-/**
- * Determine if a message should be saved to session history
- * Skip ephemeral streaming messages
- */
-function shouldSaveMessage(msg: NormalizedMessage): boolean {
-  // Don't save streaming deltas (they're accumulated into final text message)
-  if (msg.kind === 'stream_delta') return false
-  if (msg.kind === 'stream_end') return false
-  if (msg.kind === 'session_created') return false
-
-  // Save everything else (text, thinking, tool_use, tool_result, complete, error)
-  return true
 }
 
 /**

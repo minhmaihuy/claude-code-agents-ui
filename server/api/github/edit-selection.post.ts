@@ -129,9 +129,15 @@ export default defineEventHandler(async (event) => {
       const fileName = parts.at(-1) || item.name
       const parentDir = parts.length >= 2 ? parts.at(-2) : undefined
 
-      const slug = (fileName.toLowerCase() === 'skill.md' && parentDir)
+      let slug = (fileName.toLowerCase() === 'skill.md' && parentDir)
         ? parentDir
         : fileName.replace(/\.md$/i, '')
+
+      if ((slug.toLowerCase() === 'skill' || !slug) && frontmatter.name) {
+        slug = frontmatter.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      }
+
+      if (!slug) continue
 
       // Avoid duplicates if a repo has multiple md files representing the same skill.
       if (!dedup.has(slug)) {

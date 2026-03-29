@@ -213,9 +213,13 @@ export async function detectSkills(
         const parts = file.path.split('/')
         const fileName = parts.pop()!
         const parentDir = parts.pop()
-        const slug = (fileName.toLowerCase() === 'skill.md' && parentDir)
+        let slug = (fileName.toLowerCase() === 'skill.md' && parentDir)
           ? parentDir
           : fileName.replace(/\.md$/, '')
+
+        if ((slug.toLowerCase() === 'skill' || !slug) && frontmatter.name) {
+          slug = frontmatter.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        }
 
         const dir = parts.concat(parentDir ? [parentDir] : []).join('/')
         const hasSupporting = tree.some(e =>

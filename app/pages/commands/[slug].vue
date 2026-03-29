@@ -128,12 +128,14 @@ useUnsavedChanges(isDirty)
         </span>
       </template>
       <template #right>
-        <button
-          class="text-[12px] px-2 py-1 rounded focus-ring text-label"
+        <UButton
+          label="Delete"
+          icon="i-lucide-trash-2"
+          size="sm"
+          variant="ghost"
+          color="error"
           @click="showDeleteConfirm = true"
-        >
-          Delete
-        </button>
+        />
         <span v-if="isDirty" class="text-[10px] font-mono unsaved-pulse" style="color: var(--warning);">unsaved</span>
         <UButton label="Save" icon="i-lucide-save" size="sm" :loading="saving" @click="save" />
       </template>

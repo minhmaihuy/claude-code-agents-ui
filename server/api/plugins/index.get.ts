@@ -2,6 +2,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveClaudePath } from '../../utils/claudeDir'
+import { resolvePluginInstallPath } from '../../utils/marketplace'
 import type { Plugin } from '~/types'
 
 interface InstalledEntry {
@@ -57,9 +58,10 @@ export default defineEventHandler(async () => {
       if (!entry) return null
 
       const [name, marketplace] = id.split('@')
-      const pluginJsonPath = join(entry.installPath, '.claude-plugin', 'plugin.json')
+      const installPath = resolvePluginInstallPath(id, entry.installPath)
+      const pluginJsonPath = join(installPath, '.claude-plugin', 'plugin.json')
       const meta = await readJson<PluginJson>(pluginJsonPath)
-      const skills = await findSkills(entry.installPath)
+      const skills = await findSkills(installPath)
 
       return {
         id,

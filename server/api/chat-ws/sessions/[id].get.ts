@@ -1,4 +1,3 @@
-import { getChatSession, loadSessionMessages } from '../../../utils/chatSessionStorage'
 import { detectSdkSession, loadSdkSessionMessages } from '../../../utils/sdkSessionStorage'
 
 export default defineEventHandler(async (event) => {
@@ -18,35 +17,24 @@ export default defineEventHandler(async (event) => {
 
     console.log(`[GET session] Loading session ${id}, limit: ${limit}, offset: ${offset}`)
 
-    // First, try to load as a chat-ws session
-    const session = await getChatSession(id)
+    // Always call detectSdkSession(id) -> loadSdkSessionMessages(projectName, id, ...) directly
+    const projectName = await detectSdkSession(id)
+    let messagesResult: any = { messages: [], total: 0, hasMore: false }
 
-    // Load messages with pagination (chat-ws)
-    let messagesResult = await loadSessionMessages(id, {
-      limit,
-      offset,
-    })
-
-    console.log(`[GET session] Chat-ws messages:`, messagesResult.total)
-
-    // If no messages found in chat-ws, try SDK sessions
-    if (messagesResult.total === 0) {
-      console.log(`[GET session] No chat-ws messages, checking SDK sessions...`)
-      const projectName = await detectSdkSession(id)
-
-      if (projectName) {
-        console.log(`[GET session] Found SDK session in project: ${projectName}`)
-        messagesResult = await loadSdkSessionMessages(projectName, id, {
-          limit,
-          offset,
-        })
-        console.log(`[GET session] SDK messages:`, messagesResult.total)
-      }
+    if (projectName) {
+      console.log(`[GET session] Found SDK session in project: ${projectName}`)
+      messagesResult = await loadSdkSessionMessages(projectName, id, {
+        limit,
+        offset,
+      })
+      console.log(`[GET session] SDK messages:`, messagesResult.total)
+    } else {
+      console.log(`[GET session] No SDK session found for ${id}`)
     }
 
     const { messages, total, hasMore } = messagesResult
 
-    if (!session && total === 0) {
+    if (total === 0) {
       // This should never happen now, but handle it gracefully just in case
       console.warn(`[GET session] No session data found for ${id}`)
       const now = new Date().toISOString()
@@ -66,9 +54,19 @@ export default defineEventHandler(async (event) => {
       }
     }
 
+    // Extract metadata from first message if available
+    const firstMessage = messages[0]
+    const lastMessage = messages[messages.length - 1]
+
     return {
-      ...session,
+      id,
+      agentSlug: firstMessage?.metadata?.agentSlug,
+      workingDir: firstMessage?.metadata?.workingDir,
       messages,
+      createdAt: firstMessage?.timestamp || new Date().toISOString(),
+      lastActivity: lastMessage?.timestamp || new Date().toISOString(),
+      status: 'active',
+      messageCount: total,
       pagination: {
         total,
         limit,

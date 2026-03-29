@@ -40,6 +40,8 @@ const {
   isLoadingMessages: isLoadingClaudeCodeMessages,
   messagesHasMore: claudeCodeMessagesHasMore,
   fetchMessages: fetchClaudeCodeMessages,
+  renameSession,
+  deleteSession
 } = useClaudeCodeHistory()
 
 // Session list
@@ -368,18 +370,53 @@ async function handlePermissionResponse(permissionId: string, decision: 'allow' 
 
 // Handle session renamed
 async function handleSessionRenamed(payload: { projectName: string; sessionId: string; newName: string }) {
-  console.log('[ChatV2] Session renamed:', payload)
-  // TODO: Implement API call to rename session
-  // For now, just log the event
+  console.log('[ChatV2] Session renaming:', payload)
+  try {
+    await renameSession(payload.projectName, payload.sessionId, payload.newName)
+
+    // Update local state if this is the current session
+    if (urlSessionId.value === payload.sessionId) {
+      currentSessionSummary.value = payload.newName
+    }
+
+    toast.add({
+      title: 'Session renamed',
+      color: 'success',
+      timeout: 2000
+    })
+  } catch (e: any) {
+    console.error('[ChatV2] Failed to rename session:', e)
+    toast.add({
+      title: 'Failed to rename session',
+      description: e.data?.message || e.message,
+      color: 'error'
+    })
+  }
 }
 
 // Handle session deleted
 async function handleSessionDeleted(payload: { projectName: string; sessionId: string }) {
-  console.log('[ChatV2] Session deleted:', payload)
-  // TODO: Implement API call to delete session
-  // If the deleted session is currently selected, clear selection
-  if (urlSessionId.value === payload.sessionId) {
-    handleSelectionCleared()
+  console.log('[ChatV2] Session deleting:', payload)
+  try {
+    await deleteSession(payload.projectName, payload.sessionId)
+
+    // If the deleted session is currently selected, clear selection
+    if (urlSessionId.value === payload.sessionId) {
+      handleSelectionCleared()
+    }
+
+    toast.add({
+      title: 'Session deleted',
+      color: 'success',
+      timeout: 2000
+    })
+  } catch (e: any) {
+    console.error('[ChatV2] Failed to delete session:', e)
+    toast.add({
+      title: 'Failed to delete session',
+      description: e.data?.message || e.message,
+      color: 'error'
+    })
   }
 }
 

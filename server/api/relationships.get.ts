@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { resolveClaudePath } from '../utils/claudeDir'
 import { parseFrontmatter } from '../utils/frontmatter'
 import { extractRelationships } from '../utils/relationships'
@@ -83,13 +84,50 @@ async function loadPlugins(): Promise<PluginEntry[]> {
     return []
   }
 }
+async function loadMcpServers(workingDir?: string) {
+  const servers: { name: string; command?: string; url?: string; scope: string }[] = []
 
-export default defineEventHandler(async () => {
-  const [agents, commands, skills, plugins] = await Promise.all([
+  // Read global servers
+  const globalPath = join(homedir(), '.claude.json')
+  if (existsSync(globalPath)) {
+    try {
+      const raw = await readFile(globalPath, 'utf-8')
+      const data = JSON.parse(raw)
+      if (data.mcpServers) {
+        for (const [name, config] of Object.entries(data.mcpServers)) {
+          servers.push({ name, ...(config as any), scope: 'global' })
+        }
+      }
+    } catch {}
+  }
+
+  // Read project servers
+  if (workingDir && typeof workingDir === 'string') {
+    const projectPath = join(workingDir, '.mcp.json')
+    if (existsSync(projectPath)) {
+      try {
+        const raw = await readFile(projectPath, 'utf-8')
+        const data = JSON.parse(raw)
+        if (data.mcpServers) {
+          for (const [name, config] of Object.entries(data.mcpServers)) {
+            servers.push({ name, ...(config as any), scope: 'project' })
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return servers
+}
+
+export default defineEventHandler(async (event) => {
+  const { workingDir } = getQuery(event) as { workingDir?: string }
+  const [agents, commands, skills, plugins, mcpServers] = await Promise.all([
     loadAgents(),
     loadCommands(resolveClaudePath('commands'), ''),
     loadSkills(),
     loadPlugins(),
+    loadMcpServers(workingDir),
   ])
-  return extractRelationships(agents, commands, skills, plugins)
+  return extractRelationships(agents, commands, skills, plugins, mcpServers)
 })

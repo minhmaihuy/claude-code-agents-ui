@@ -15,6 +15,10 @@ const filteredSkills = computed(() => {
     s.frontmatter.agent?.toLowerCase().includes(q)
   )
 })
+
+onMounted(() => {
+  fetchSkills()
+})
 </script>
 
 <template>

@@ -93,7 +93,9 @@ export async function loadSdkSessionMessages(
 }
 
 /**
- * Detect if a session is an SDK session by checking if it exists in any project
+ * Detect if a session is an SDK session by checking if it exists in any project.
+ * Scans all JSONL files in all project directories to find the sessionId.
+ * Returns the project name if found, null otherwise.
  */
 export async function detectSdkSession(sessionId: string): Promise<string | null> {
   const projectsDir = path.join(getClaudeDir(), 'projects')
@@ -107,16 +109,20 @@ export async function detectSdkSession(sessionId: string): Promise<string | null
 
     for (const projectName of projects) {
       const projectDir = path.join(projectsDir, projectName)
-      const stat = await fs.stat(projectDir)
+
+      let stat
+      try {
+        stat = await fs.stat(projectDir)
+      } catch {
+        continue
+      }
 
       if (!stat.isDirectory()) continue
 
-      // Quick check: scan first few lines of any JSONL file for this sessionId
       const files = await fs.readdir(projectDir)
       const jsonlFiles = files.filter(f => f.endsWith('.jsonl') && !f.startsWith('agent-'))
 
-      for (const file of jsonlFiles.slice(0, 3)) {
-        // Only check first 3 files for performance
+      for (const file of jsonlFiles) {
         const jsonlFile = path.join(projectDir, file)
         const fileStream = createReadStream(jsonlFile)
         const rl = readline.createInterface({
@@ -124,27 +130,28 @@ export async function detectSdkSession(sessionId: string): Promise<string | null
           crlfDelay: Infinity,
         })
 
-        let lineCount = 0
+        let found = false
         for await (const line of rl) {
-          if (lineCount++ > 100) break // Only check first 100 lines for performance
-
-          if (line.trim()) {
+          if (line.includes(sessionId)) {
+            // Quick string check before expensive JSON.parse
             try {
               const entry = JSON.parse(line)
               if (entry.sessionId === sessionId) {
-                // Found it!
-                rl.close()
-                fileStream.destroy()
-                return projectName
+                found = true
+                break
               }
             } catch {
-              // Skip malformed lines
+              // Malformed line, skip
             }
           }
         }
 
         rl.close()
         fileStream.destroy()
+
+        if (found) {
+          return projectName
+        }
       }
     }
 
@@ -154,3 +161,4 @@ export async function detectSdkSession(sessionId: string): Promise<string | null
     return null
   }
 }
+

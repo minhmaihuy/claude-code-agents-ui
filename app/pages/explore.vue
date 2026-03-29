@@ -13,6 +13,7 @@ const {
   fetchAll: fetchPlugins,
   toggleEnabled,
 } = usePlugins();
+const { fetchAll: fetchSkills } = useSkills();
 const {
   imports: githubImports,
   loading: importsLoading,
@@ -80,7 +81,7 @@ async function onInstallPlugin(marketplace: string, plugin: string) {
   try {
     await installPlugin(marketplace, plugin);
     toast.add({ title: `${plugin} installed`, color: "success" });
-    await Promise.all([fetchPlugins(), fetchAvailable()]);
+    await Promise.all([fetchPlugins(), fetchAvailable(), fetchSkills()]);
   } catch (e: any) {
     toast.add({
       title: "Install failed",
@@ -97,7 +98,7 @@ async function onUninstallPlugin(pluginName: string) {
   try {
     await uninstallPlugin(pluginName);
     toast.add({ title: `${pluginName} uninstalled`, color: "success" });
-    await Promise.all([fetchPlugins(), fetchAvailable()]);
+    await Promise.all([fetchPlugins(), fetchAvailable(), fetchSkills()]);
   } catch (e: any) {
     toast.add({
       title: "Uninstall failed",
@@ -287,6 +288,7 @@ async function onUpdate(owner: string, repo: string) {
   try {
     await updateImport(owner, repo);
     toast.add({ title: "Import updated", color: "success" });
+    fetchSkills();
   } catch {
     toast.add({ title: "Failed to update", color: "error" });
   }
@@ -296,6 +298,7 @@ async function onRemove(owner: string, repo: string) {
   try {
     await removeImport(owner, repo);
     toast.add({ title: "Import removed", color: "success" });
+    fetchSkills();
   } catch {
     toast.add({ title: "Failed to remove", color: "error" });
   }
@@ -612,7 +615,7 @@ async function onRemove(owner: string, repo: string) {
             :entry="entry"
             @update="onUpdate"
             @remove="onRemove"
-            @changed="fetchImports"
+            @changed="() => { fetchImports(); fetchSkills(); }"
           />
         </div>
 
@@ -818,6 +821,7 @@ async function onRemove(owner: string, repo: string) {
           @imported="
             showImportModal = false;
             fetchImports();
+            fetchSkills();
           "
         />
       </template>

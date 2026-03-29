@@ -51,9 +51,9 @@ export interface Settings {
 export type RelationshipType = 'spawns' | 'agent-frontmatter' | 'spawned-by'
 
 export interface Relationship {
-  sourceType: 'agent' | 'command' | 'skill' | 'plugin'
+  sourceType: 'agent' | 'command' | 'skill' | 'plugin' | 'mcp'
   sourceSlug: string
-  targetType: 'agent' | 'command' | 'skill' | 'plugin'
+  targetType: 'agent' | 'command' | 'skill' | 'plugin' | 'mcp'
   targetSlug: string
   type: RelationshipType
   evidence: string

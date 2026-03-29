@@ -1,13 +1,5 @@
-import { listChatSessions } from '../../../utils/chatSessionStorage'
-
 export default defineEventHandler(async () => {
-  try {
-    const sessions = await listChatSessions()
-    return sessions
-  } catch (error: any) {
-    throw createError({
-      statusCode: 500,
-      message: error.message || 'Failed to list chat sessions',
-    })
-  }
+  // listChatSessions is no longer used for the sidebar (now uses v2/claude-code/projects)
+  // This endpoint is only used by legacy ChatV2Interface and can return empty
+  return []
 })

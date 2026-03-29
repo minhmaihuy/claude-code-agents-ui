@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AgentFrontmatter, AgentMemory, AgentSkill } from '~/types'
-import { MODEL_OPTIONS_COMPACT } from '~/utils/models'
+import { MODEL_META, MODEL_IDS } from '~/utils/models'
 
 const props = defineProps<{
   frontmatter: AgentFrontmatter
@@ -16,10 +16,16 @@ const emit = defineEmits<{
 
 const activeTab = ref<'instructions' | 'settings' | 'skills'>('instructions')
 
-const memoryOptions: { label: string; value: AgentMemory }[] = [
-  { label: 'User', value: 'user' },
-  { label: 'Project', value: 'project' },
-  { label: 'None', value: 'none' },
+const modelOptions = MODEL_IDS.map(id => ({
+  value: id,
+  label: MODEL_META[id].label,
+  description: MODEL_META[id].description
+}))
+
+const memoryOptions: { label: string; value: AgentMemory; description: string }[] = [
+  { label: 'User', value: 'user', description: 'Shared across all projects' },
+  { label: 'Project', value: 'project', description: 'Specific to this repository' },
+  { label: 'None', value: 'none', description: 'No persistent memory' },
 ]
 
 function updateFrontmatter(key: keyof AgentFrontmatter, value: unknown) {
@@ -58,13 +64,37 @@ function updateFrontmatter(key: keyof AgentFrontmatter, value: unknown) {
       <div class="space-y-1">
         <label class="text-[11px] font-medium" style="color: var(--text-tertiary);">Model</label>
         <div class="flex gap-2">
-          <button v-for="opt in MODEL_OPTIONS_COMPACT" :key="opt.value" class="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all" :style="{ background: frontmatter.model === opt.value ? 'var(--accent-muted)' : 'var(--surface-raised)', border: '1px solid ' + (frontmatter.model === opt.value ? 'rgba(229, 169, 62, 0.2)' : 'var(--border-subtle)'), color: frontmatter.model === opt.value ? 'var(--accent)' : 'var(--text-secondary)' }" @click="updateFrontmatter('model', opt.value)">{{ opt.label }}</button>
+          <button
+            v-for="opt in modelOptions"
+            :key="opt.value"
+            class="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all"
+            :style="{
+              background: frontmatter.model === opt.value ? 'var(--accent-muted)' : 'var(--surface-raised)',
+              border: '1px solid ' + (frontmatter.model === opt.value ? 'rgba(229, 169, 62, 0.2)' : 'var(--border-subtle)'),
+              color: frontmatter.model === opt.value ? 'var(--accent)' : 'var(--text-secondary)'
+            }"
+            @click="updateFrontmatter('model', opt.value)"
+          >
+            {{ opt.label }}
+          </button>
         </div>
       </div>
       <div class="space-y-1">
         <label class="text-[11px] font-medium" style="color: var(--text-tertiary);">Memory</label>
         <div class="flex gap-2">
-          <button v-for="opt in memoryOptions" :key="opt.value" class="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all" :style="{ background: frontmatter.memory === opt.value ? 'var(--accent-muted)' : 'var(--surface-raised)', border: '1px solid ' + (frontmatter.memory === opt.value ? 'rgba(229, 169, 62, 0.2)' : 'var(--border-subtle)'), color: frontmatter.memory === opt.value ? 'var(--accent)' : 'var(--text-secondary)' }" @click="updateFrontmatter('memory', opt.value)">{{ opt.label }}</button>
+          <button
+            v-for="opt in memoryOptions"
+            :key="opt.value"
+            class="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all"
+            :style="{
+              background: frontmatter.memory === opt.value ? 'var(--accent-muted)' : 'var(--surface-raised)',
+              border: '1px solid ' + (frontmatter.memory === opt.value ? 'rgba(229, 169, 62, 0.2)' : 'var(--border-subtle)'),
+              color: frontmatter.memory === opt.value ? 'var(--accent)' : 'var(--text-secondary)'
+            }"
+            @click="updateFrontmatter('memory', opt.value)"
+          >
+            {{ opt.label }}
+          </button>
         </div>
       </div>
       <div class="space-y-1">

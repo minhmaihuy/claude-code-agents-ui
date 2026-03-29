@@ -109,3 +109,32 @@ export function getMarketplaceSourceInfo(marketplace: KnownMarketplace): { sourc
   if (src.source === 'directory') return { sourceType: 'directory', sourceUrl: src.path || '' }
   return { sourceType: src.source, sourceUrl: '' }
 }
+
+/**
+ * Robustly resolve a plugin's installation path, handling absolute host paths
+ * and providing fallbacks for common cache patterns.
+ */
+export function resolvePluginInstallPath(pluginId: string, registeredPath: string): string {
+  // 1. Handle absolute host paths (e.g. from different environments)
+  let resolved = registeredPath
+  if (resolved.includes('.claude')) {
+    const parts = resolved.split('.claude')
+    const relativePart = parts[parts.length - 1]
+    resolved = resolveClaudePath(relativePart.startsWith('/') ? relativePart.substring(1) : relativePart)
+  }
+
+  // 2. If it exists, we're good
+  if (existsSync(resolved)) {
+    return resolved
+  }
+
+  // 3. Fallback: try common pattern ~/.claude/plugins/cache/{name}
+  const [pluginName] = pluginId.split('@')
+  const fallbackPath = resolveClaudePath('plugins', 'cache', pluginName)
+  if (existsSync(fallbackPath)) {
+    return fallbackPath
+  }
+
+  // Return original (possibly rebased) path if no better option found
+  return resolved
+}

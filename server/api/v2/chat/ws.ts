@@ -1,6 +1,5 @@
 import type { Peer } from 'crossws'
 import { providerRegistry } from '../../../utils/providers/registry'
-import { saveMessageToSession } from '../../../utils/chatSessionStorage'
 import type { ChatV2WebSocketMessage, NormalizedMessage } from '~/types'
 
 // Store pending permissions for permission responses
