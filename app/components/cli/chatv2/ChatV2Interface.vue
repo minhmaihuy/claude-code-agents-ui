@@ -4,6 +4,7 @@ import { useClaudeCodeHistory } from '~/composables/useClaudeCodeHistory'
 import { convertToDisplayMessages } from '~/utils/chatMessageConverter'
 import { convertClaudeCodeMessages } from '~/utils/claudeCodeMessageConverter'
 import type { DisplayChatMessage, PermissionMode } from '~/types'
+import { MODEL_OPTIONS_CHAT, DEFAULT_MODEL } from '~/utils/models'
 
 const props = defineProps<{
   executionOptions: {
@@ -82,14 +83,8 @@ const permissionModeOptions: { value: PermissionMode; label: string; description
 
 const selectedPermissionMode = ref<PermissionMode>('default')
 
-// Model selector
-const modelOptions: { value: string; label: string; description: string }[] = [
-  { value: 'opus', label: 'Opus', description: 'Most capable, best for complex tasks' },
-  { value: 'sonnet', label: 'Sonnet', description: 'Balanced speed and intelligence' },
-  { value: 'haiku', label: 'Haiku', description: 'Fastest, great for simple tasks' },
-]
-
-const selectedModel = ref<string>('sonnet')
+// Model selector — options and default come from the shared model registry
+const selectedModel = ref<string>(DEFAULT_MODEL)
 
 // Thinking mode toggle
 const thinkingEnabled = ref(false)
@@ -490,7 +485,7 @@ function handleOpenFile(filePath: string) {
           <ChatV2ModelSelector
             v-if="(viewMode === 'history' && urlSessionId) || (viewMode === 'live' && currentSessionId)"
             v-model="selectedModel"
-            :options="modelOptions"
+            :options="MODEL_OPTIONS_CHAT"
           />
 
           <!-- Thinking Mode Toggle (only when viewing a specific chat session) -->
