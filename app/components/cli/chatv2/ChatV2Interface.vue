@@ -79,6 +79,7 @@ onUnmounted(() => {
 watch(isMobileScreen, (isMobile) => {
   if (!isMobile) {
     mobileSidebarOpen.value = false
+    sidebarCollapsed.value = false
   }
 })
 
