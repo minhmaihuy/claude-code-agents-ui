@@ -63,6 +63,7 @@ const isInputFocused = ref(false)
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
 const isSmallScreen = computed(() => windowWidth.value < 1024)
 const isMobileScreen = computed(() => windowWidth.value < 768)
+const isHeaderTwoRow = computed(() => windowWidth.value < 640)
 
 function updateWidth() {
   windowWidth.value = window.innerWidth
@@ -741,7 +742,7 @@ function handleOpenFile(filePath: string) {
           />
 
           <!-- Session ID (only in live mode) -->
-          <span v-if="viewMode === 'live' && currentSessionId" class="hidden sm:inline text-[10px] font-mono" style="color: var(--text-tertiary);">
+          <span v-if="viewMode === 'live' && currentSessionId" class="text-[10px] font-mono" style="color: var(--text-tertiary);">
             {{ currentSessionId.slice(0, 8) }}
           </span>
         </div>
@@ -749,7 +750,7 @@ function handleOpenFile(filePath: string) {
 
         <!-- Row 2: model + permission controls — mobile only -->
         <div
-          v-if="isMobileScreen && ((viewMode === 'history' && urlSessionId) || (viewMode === 'live' && isLiveChat) || (viewMode === 'live' && currentSessionId))"
+          v-if="isHeaderTwoRow && ((viewMode === 'history' && urlSessionId) || (viewMode === 'live' && isLiveChat) || (viewMode === 'live' && currentSessionId))"
           class="flex items-center gap-2 px-3 pb-2"
         >
           <ChatV2ModelSelector
