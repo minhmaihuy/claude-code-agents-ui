@@ -21,6 +21,27 @@ const error = ref('')
 
 const typeLabel = computed(() => props.type === 'skills' ? 'Skills' : 'Agents')
 
+const groupedItems = computed(() => {
+  if (!scanResult.value) return {}
+  const groups: Record<string, any[]> = {}
+  
+  const items = props.type === 'skills' 
+    ? (scanResult.value as SkillScanResult).skills 
+    : (scanResult.value as AgentScanResult).agents
+
+  for (const item of items) {
+    const cat = item.category || 'Other'
+    if (!groups[cat]) groups[cat] = []
+    groups[cat].push(item)
+  }
+  
+  // Sort groups alphabetically
+  return Object.keys(groups).sort().reduce((acc, key) => {
+    acc[key] = groups[key]
+    return acc
+  }, {} as Record<string, any[]>)
+})
+
 async function doScan() {
   error.value = ''
   try {
@@ -196,70 +217,47 @@ function reset() {
         </button>
       </div>
 
-      <div class="max-h-80 overflow-y-auto space-y-1 rounded-lg p-1" style="background: var(--surface-base);">
-        <!-- Skills List -->
-        <template v-if="type === 'skills'">
+      <div class="max-h-80 overflow-y-auto space-y-4 rounded-lg p-1" style="background: var(--surface-base);">
+        <div v-for="(items, category) in groupedItems" :key="category" class="space-y-1">
+          <!-- Category Header -->
+          <div class="px-3 py-1.5 sticky top-0 z-10 flex items-center gap-2" style="background: var(--surface-base);">
+            <div class="h-px flex-1" style="background: var(--border-subtle);"></div>
+            <span class="text-[10px] font-mono uppercase tracking-wider text-meta">{{ category }}</span>
+            <div class="h-px flex-1" style="background: var(--border-subtle);"></div>
+          </div>
+
           <label
-            v-for="skill in (scanResult as SkillScanResult).skills"
-            :key="skill.slug"
+            v-for="item in items"
+            :key="item.slug"
             class="flex items-start gap-3 px-3 py-2.5 rounded-lg cursor-pointer hover-row"
           >
             <input
               type="checkbox"
-              :checked="selectedItems.has(skill.slug)"
+              :checked="selectedItems.has(item.slug)"
               class="mt-0.5 shrink-0"
-              @change="toggleItem(skill.slug)"
+              @change="toggleItem(item.slug)"
             />
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-[13px] font-medium truncate">{{ skill.name }}</span>
+                <span class="text-[13px] font-medium truncate">{{ item.name }}</span>
                 <span
-                  v-if="skill.conflict"
+                  v-if="item.conflict"
                   class="text-[9px] font-medium px-1.5 py-px rounded-full shrink-0"
                   style="background: rgba(234, 179, 8, 0.1); color: var(--warning, #eab308);"
                 >
                   exists locally
                 </span>
                 <span
-                  v-if="skill.category"
+                  v-if="type === 'skills' && item.category"
                   class="text-[10px] font-mono px-1.5 py-px rounded-full shrink-0 badge badge-subtle"
                 >
-                  {{ skill.category }}
+                  {{ item.category }}
                 </span>
               </div>
-              <p class="text-[11px] text-label mt-0.5 line-clamp-2">{{ skill.description }}</p>
+              <p class="text-[11px] text-label mt-0.5 line-clamp-2">{{ item.description }}</p>
             </div>
           </label>
-        </template>
-
-        <!-- Agents List -->
-        <template v-else>
-          <label
-            v-for="agent in (scanResult as AgentScanResult).agents"
-            :key="agent.slug"
-            class="flex items-start gap-3 px-3 py-2.5 rounded-lg cursor-pointer hover-row"
-          >
-            <input
-              type="checkbox"
-              :checked="selectedItems.has(agent.slug)"
-              class="mt-0.5 shrink-0"
-              @change="toggleItem(agent.slug)"
-            />
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="text-[13px] font-medium truncate">{{ agent.name }}</span>
-                <span
-                  v-if="agent.conflict"
-                  class="text-[9px] font-medium px-1.5 py-px rounded-full shrink-0"
-                  style="background: rgba(234, 179, 8, 0.1); color: var(--warning, #eab308);"
-                >
-                  exists locally
-                </span>
-              </div>
-              <p class="text-[11px] text-label mt-0.5 line-clamp-2">{{ agent.description }}</p>
-            </div>
-          </label>
-        </template>
+        </div>
       </div>
 
       <div

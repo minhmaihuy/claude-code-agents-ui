@@ -40,8 +40,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Import directory not found on disk' })
   }
 
-  const availableSkills: { slug: string; name: string; description: string; selected: boolean }[] = []
-  const availableAgents: { slug: string; name: string; description: string; selected: boolean }[] = []
+  const availableSkills: { slug: string; name: string; description: string; category: string | null; selected: boolean }[] = []
+  const availableAgents: { slug: string; name: string; description: string; category: string | null; selected: boolean }[] = []
 
   // Prefer skills-index.json when present so slug/metadata matches the import workflow.
   // (This also avoids a potentially expensive full markdown scan.)
@@ -86,6 +86,7 @@ export default defineEventHandler(async (event) => {
           slug: s.slug,
           name: s.name,
           description: s.description,
+          category: null,
           selected: entry.selectedItems?.includes(s.slug) || false,
         })
       }
@@ -107,8 +108,8 @@ export default defineEventHandler(async (event) => {
   ])
 
   const skipLower = new Set([...SKIP_FILENAMES].map(s => s.toLowerCase()))
-  const skillDedup = new Map<string, { slug: string; name: string; description: string; selected: boolean }>()
-  const agentDedup = new Map<string, { slug: string; name: string; description: string; selected: boolean }>()
+  const skillDedup = new Map<string, { slug: string; name: string; description: string; category: string | null; selected: boolean }>()
+  const agentDedup = new Map<string, { slug: string; name: string; description: string; category: string | null; selected: boolean }>()
 
   const walk = async (dir: string) => {
     const items = await readdir(dir, { withFileTypes: true })
@@ -142,11 +143,20 @@ export default defineEventHandler(async (event) => {
           slug = parts[parts.length - 2]!
         }
         if (!slug) continue
+
+        // Extract category
+        const categoryParts = parts.slice(0, -1)
+        if (fileName.toLowerCase() === 'agent.md' && categoryParts.length > 0) {
+          categoryParts.pop()
+        }
+        const category = categoryParts.length > 0 ? categoryParts.join('/') : null
+
         if (!agentDedup.has(slug)) {
           agentDedup.set(slug, {
             slug,
             name: frontmatter.name,
             description: frontmatter.description,
+            category,
             selected: entry.selectedItems?.includes(slug) || false,
           })
         }
@@ -165,10 +175,18 @@ export default defineEventHandler(async (event) => {
         }
 
         if (slug && !skillDedup.has(slug)) {
+          // Extract category for skills
+          const categoryParts = parts.slice(0, -1)
+          if (isSkillFile && categoryParts.length > 0) {
+            categoryParts.pop()
+          }
+          const category = categoryParts.length > 0 ? categoryParts.join('/') : null
+
           skillDedup.set(slug, {
             slug,
             name: frontmatter.name,
             description: frontmatter.description,
+            category,
             selected: entry.selectedItems?.includes(slug) || false,
           })
         }

@@ -397,7 +397,7 @@ const lineCount = computed(() => rawJson.value.split('\n').length)
           />
         </div>
         <p class="text-[12px] text-meta">
-          Manage skill repositories imported from GitHub.
+          Manage repositories imported from GitHub.
         </p>
 
         <div v-if="githubImports.length === 0" class="text-[13px] text-label">

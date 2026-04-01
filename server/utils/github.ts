@@ -64,6 +64,7 @@ interface DetectedAgent {
   slug: string
   name: string
   description: string
+  category: string | null
   filePath: string
 }
 
@@ -134,7 +135,9 @@ export async function detectSkillsLocal(
         const items = await readdir(dir)
         const hasSupporting = items.length > 1
 
-        const category = parts.length > 2 ? parts[parts.length - 3] || null : null
+        // Extract category: everything above the slug folder (parentDir)
+        const categoryParts = parts.slice(0, -2)
+        const category = categoryParts.length > 0 ? categoryParts.join('/') : null
 
         skills.push({
           slug,
@@ -173,16 +176,26 @@ export async function detectAgentsLocal(
       if (frontmatter.name && frontmatter.description) {
         const relPath = relative(baseDir, file)
         const parts = relPath.split('/')
-        let slug = fileName.replace(/\.md$/, '')
+        const originalFileName = parts.at(-1) || ''
+        let slug = originalFileName.replace(/\.md$/, '')
         
         if (slug.toLowerCase() === 'agent' && parts.length > 1) {
           slug = parts[parts.length - 2]!
         }
 
+        // Extract category
+        const categoryParts = parts.slice(0, -1)
+        if (originalFileName.toLowerCase() === 'agent.md' && categoryParts.length > 0) {
+          // If file is agent.md, slug was taken from parent, so category is above that
+          categoryParts.pop()
+        }
+        const category = categoryParts.length > 0 ? categoryParts.join('/') : null
+
         agents.push({
           slug,
           name: frontmatter.name,
           description: frontmatter.description,
+          category,
           filePath: relPath,
         })
       }
