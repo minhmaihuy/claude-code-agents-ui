@@ -765,6 +765,9 @@ function getTodoStatusBadge(status: string): { bg: string; color: string; label:
   margin: 1rem 0;
   font-size: 0.9em;
   table-layout: fixed;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
 }
 
 .prose :deep(th),
@@ -800,7 +803,7 @@ function getTodoStatusBadge(status: string): { bg: string; color: string; label:
   padding: 0.2em 0.4em;
   border-radius: 0.25rem;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace);
-  word-break: break-all;
+  word-break: break-word;
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
 }
