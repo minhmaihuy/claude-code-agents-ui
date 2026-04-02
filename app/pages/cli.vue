@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// CLI page - handles all navigation internally without URL routing
 const { executionOptions } = useCliExecution()
 
 useHead({
@@ -14,5 +13,9 @@ useHead({
         <ChatV2Interface :execution-options="executionOptions" />
       </div>
     </div>
+  </div>
+  <!-- Hidden child route outlet — child page has no content, just registers route params -->
+  <div class="hidden">
+    <NuxtPage />
   </div>
 </template>
