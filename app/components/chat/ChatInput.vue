@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Command } from '~/types'
+
 const props = defineProps<{
   modelValue: string;
   placeholder: string;
@@ -13,7 +15,29 @@ const emit = defineEmits<{
   stop: [];
 }>();
 
+const { commands: allCommands, fetchAll: fetchCommands } = useCommands()
+const { skills: allSkills, fetchAll: fetchSkills } = useSkills()
 const inputRef = ref<HTMLTextAreaElement | null>(null);
+
+// Command/Skill Menu State
+const isMenuOpen = ref(false)
+const selectedItemIdx = ref(0)
+const menuSearchQuery = ref('')
+
+const menuItems = computed(() => {
+  const items = [
+    ...allCommands.value.map(c => ({ type: 'command' as const, name: c.frontmatter.name, description: c.frontmatter.description, slug: c.slug, directory: c.directory })),
+    ...allSkills.value.map(s => ({ type: 'skill' as const, name: s.frontmatter.name, description: s.frontmatter.description, slug: s.slug }))
+  ]
+  
+  if (!menuSearchQuery.value) return items
+  
+  const q = menuSearchQuery.value.toLowerCase()
+  return items.filter(i => 
+    i.name.toLowerCase().includes(q) || 
+    i.description?.toLowerCase().includes(q)
+  )
+})
 
 function autoResize() {
   const el = inputRef.value;
@@ -22,12 +46,60 @@ function autoResize() {
   el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
 }
 
+function selectItem(item: { type: 'command' | 'skill'; name: string }) {
+  emit('update:modelValue', `/${item.name} `)
+  isMenuOpen.value = false
+  inputRef.value?.focus()
+}
+
 function handleKeydown(e: KeyboardEvent) {
+  // Command Menu Navigation
+  if (isMenuOpen.value && menuItems.value.length > 0) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      selectedItemIdx.value = (selectedItemIdx.value + 1) % menuItems.value.length
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      selectedItemIdx.value = (selectedItemIdx.value - 1 + menuItems.value.length) % menuItems.value.length
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      const item = menuItems.value[selectedItemIdx.value]
+      if (item) selectItem(item)
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      isMenuOpen.value = false
+      return
+    }
+  }
+
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     emit("send");
   }
 }
+
+// Watch value changes to detect slash
+watch(() => props.modelValue, (newVal) => {
+  // Detect "/" at start
+  if (newVal.startsWith('/')) {
+    const query = newVal.slice(1).split(' ')[0] || ''
+    if (newVal.includes(' ')) {
+      isMenuOpen.value = false
+    } else {
+      menuSearchQuery.value = query
+      isMenuOpen.value = true
+      selectedItemIdx.value = 0
+    }
+  } else {
+    isMenuOpen.value = false
+  }
+})
 
 function focus() {
   inputRef.value?.focus();
@@ -37,11 +109,27 @@ function resetHeight() {
   if (inputRef.value) inputRef.value.style.height = "auto";
 }
 
+onMounted(async () => {
+  await Promise.all([
+    allCommands.value.length === 0 ? fetchCommands() : Promise.resolve(),
+    allSkills.value.length === 0 ? fetchSkills() : Promise.resolve()
+  ])
+})
+
 defineExpose({ focus, resetHeight });
 </script>
 
 <template>
-  <div class="shrink-0 px-5 pb-5 pt-2">
+  <div class="shrink-0 px-5 pb-5 pt-2 relative">
+    <!-- Command Menu -->
+    <ChatV2CommandMenu
+      :items="menuItems"
+      :selected-index="selectedItemIdx"
+      :is-open="isMenuOpen"
+      class="!bottom-[calc(100%-8px)] left-5 !w-[calc(100%-40px)]"
+      @select="selectItem"
+    />
+
     <div
       class="relative rounded-2xl transition-all duration-200"
       :style="{

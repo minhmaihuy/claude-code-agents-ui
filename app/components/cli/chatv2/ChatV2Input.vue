@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Command } from '~/types'
+
 const props = defineProps<{
   modelValue: string
   disabled?: boolean
@@ -14,8 +16,30 @@ const emit = defineEmits<{
   (e: 'blur'): void
 }>()
 
+const { commands: allCommands, fetchAll: fetchCommands } = useCommands()
+const { skills: allSkills, fetchAll: fetchSkills } = useSkills()
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const isFocused = ref(false)
+
+// Command/Skill Menu State
+const isMenuOpen = ref(false)
+const selectedItemIdx = ref(0)
+const menuSearchQuery = ref('')
+
+const menuItems = computed(() => {
+  const items = [
+    ...allCommands.value.map(c => ({ type: 'command' as const, name: c.frontmatter.name, description: c.frontmatter.description, slug: c.slug, directory: c.directory })),
+    ...allSkills.value.map(s => ({ type: 'skill' as const, name: s.frontmatter.name, description: s.frontmatter.description, slug: s.slug }))
+  ]
+  
+  if (!menuSearchQuery.value) return items
+  
+  const q = menuSearchQuery.value.toLowerCase()
+  return items.filter(i => 
+    i.name.toLowerCase().includes(q) || 
+    i.description?.toLowerCase().includes(q)
+  )
+})
 
 // Local value for v-model
 const localValue = computed({
@@ -64,8 +88,39 @@ function autoResize() {
   textareaRef.value.style.height = `${newHeight}px`
 }
 
+function selectItem(item: { type: 'command' | 'skill'; name: string }) {
+  localValue.value = `/${item.name} `
+  isMenuOpen.value = false
+  textareaRef.value?.focus()
+}
+
 // Handle keydown
 function handleKeydown(e: KeyboardEvent) {
+  // Command Menu Navigation
+  if (isMenuOpen.value && menuItems.value.length > 0) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      selectedItemIdx.value = (selectedItemIdx.value + 1) % menuItems.value.length
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      selectedItemIdx.value = (selectedItemIdx.value - 1 + menuItems.value.length) % menuItems.value.length
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      const item = menuItems.value[selectedItemIdx.value]
+      if (item) selectItem(item)
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      isMenuOpen.value = false
+      return
+    }
+  }
+
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     if (!props.disabled && (localValue.value.trim() || attachedImages.value.length > 0)) {
@@ -74,19 +129,45 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-// Watch value changes to resize
-watch(localValue, () => {
+// Watch value changes to resize and detect slash
+watch(localValue, (newVal) => {
   nextTick(() => autoResize())
+
+  // Detect "/" at start
+  if (newVal.startsWith('/')) {
+    const query = newVal.slice(1).split(' ')[0] || ''
+    if (newVal.includes(' ')) {
+      isMenuOpen.value = false
+    } else {
+      menuSearchQuery.value = query
+      isMenuOpen.value = true
+      selectedItemIdx.value = 0
+    }
+  } else {
+    isMenuOpen.value = false
+  }
 })
 
 // Focus on mount
-onMounted(() => {
+onMounted(async () => {
   textareaRef.value?.focus()
+  await Promise.all([
+    allCommands.value.length === 0 ? fetchCommands() : Promise.resolve(),
+    allSkills.value.length === 0 ? fetchSkills() : Promise.resolve()
+  ])
 })
 </script>
 
 <template>
-  <div class="px-2 py-1.5 sm:px-3 sm:py-2" style="background: var(--surface-base);">
+  <div class="px-2 py-1.5 sm:px-3 sm:py-2 relative" style="background: var(--surface-base);">
+    <!-- Command Menu -->
+    <ChatV2CommandMenu
+      :items="menuItems"
+      :selected-index="selectedItemIdx"
+      :is-open="isMenuOpen"
+      @select="selectItem"
+    />
+
     <!-- Image Previews -->
     <div v-if="attachedImages.length > 0" class="flex gap-2 mb-2 overflow-x-auto pb-1">
       <div v-for="(img, idx) in attachedImages" :key="idx" class="relative group shrink-0">
