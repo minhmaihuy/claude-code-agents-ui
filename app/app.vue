@@ -414,7 +414,7 @@ function badgeFor(to: string) {
           @complete="async () => { await loadConfig(); await Promise.all([fetchAgents(), fetchCommands(), fetchPlugins(), fetchSkills()]) }"
         />
 
-        <div v-show="initialized && claudeDirExists">
+        <div v-show="initialized && claudeDirExists" class="h-full">
           <NuxtPage />
         </div>
         <div v-if="!initialized" class="flex items-center justify-center h-full">

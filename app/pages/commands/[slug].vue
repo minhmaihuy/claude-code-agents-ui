@@ -124,7 +124,7 @@ useUnsavedChanges(isDirty)
 </script>
 
 <template>
-  <div class="h-[calc(100vh-4rem)] flex flex-col">
+  <div class="h-full flex flex-col">
     <PageHeader :title="command?.frontmatter.name || slug">
       <template #leading>
         <NuxtLink to="/commands" class="focus-ring rounded p-1.5 -m-1.5" aria-label="Back to commands">

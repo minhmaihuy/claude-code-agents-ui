@@ -22,12 +22,28 @@ const skills = ref<AgentSkill[]>([])
 const loadingSkills = ref(false)
 const isTestPanelOpen = ref(true)
 
+const { hasDraft, draftAge, loadDraft, clearDraft, scheduleSave } = useDraftRecovery(`agent:${slug}`)
+
 const isDirty = computed(() => {
   return body.value !== savedBody.value ||
     JSON.stringify(frontmatter.value) !== JSON.stringify(savedFrontmatter.value)
 })
 
 const isDraft = computed(() => body.value !== savedBody.value)
+
+watch([frontmatter, body], () => {
+  if (!loading.value && isDirty.value) scheduleSave(frontmatter.value, body.value)
+}, { deep: true })
+
+function restoreDraft() {
+  const draft = loadDraft()
+  if (draft) {
+    frontmatter.value = { ...frontmatter.value, ...(draft.frontmatter as AgentFrontmatter) }
+    body.value = draft.body
+    clearDraft()
+    toast.add({ title: 'Draft restored', color: 'success' })
+  }
+}
 
 async function loadAgent() {
   loading.value = true
@@ -87,6 +103,7 @@ async function save() {
     savedFrontmatter.value = { ...frontmatter.value }
     savedBody.value = body.value
     lastModified.value = result.lastModified || null
+    clearDraft()
 
     toast.add({
       title: 'Agent saved successfully',
@@ -111,6 +128,7 @@ async function save() {
 const showDeleteConfirm = ref(false)
 async function handleDelete() {
   await remove(slug)
+  clearDraft()
   router.push('/agents')
 }
 
@@ -127,7 +145,7 @@ useUnsavedChanges(isDirty)
 </script>
 
 <template>
-  <div class="h-[calc(100vh-4rem)] flex flex-col">
+  <div class="h-full flex flex-col">
     <!-- Top bar -->
     <div class="shrink-0 flex items-center justify-between px-6 py-3 border-b" style="border-color: var(--border-subtle);">
       <div class="flex items-center gap-3">
@@ -193,6 +211,20 @@ useUnsavedChanges(isDirty)
         :class="isTestPanelOpen ? 'w-[70%] border-r' : 'w-full'"
         style="border-color: var(--border-subtle);"
       >
+        <!-- Draft recovery banner -->
+        <div
+          v-if="hasDraft"
+          class="m-6 mb-0 rounded-xl px-4 py-3 flex items-center gap-3"
+          style="background: rgba(59, 130, 246, 0.06); border: 1px solid rgba(59, 130, 246, 0.12);"
+        >
+          <UIcon name="i-lucide-archive-restore" class="size-4 shrink-0" style="color: var(--info, #3b82f6);" />
+          <span class="text-[12px] flex-1" style="color: var(--text-secondary);">
+            You have an unsaved draft from {{ draftAge }}.
+          </span>
+          <button class="text-[12px] font-medium px-2 py-1 rounded hover-bg" style="color: var(--info, #3b82f6);" @click="restoreDraft">Restore</button>
+          <button class="text-[12px] px-2 py-1 rounded hover-bg text-meta" @click="clearDraft">Dismiss</button>
+        </div>
+
         <EditorPanel
           :frontmatter="frontmatter"
           :body="body"

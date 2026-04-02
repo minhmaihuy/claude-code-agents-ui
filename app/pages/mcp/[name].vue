@@ -129,7 +129,7 @@ useUnsavedChanges(isDirty)
 </script>
 
 <template>
-  <div class="h-[calc(100vh-4rem)] flex flex-col">
+  <div class="h-full flex flex-col">
     <!-- Top bar -->
     <div class="shrink-0 flex items-center justify-between px-6 py-3 border-b" style="border-color: var(--border-subtle);">
       <div class="flex items-center gap-3">
