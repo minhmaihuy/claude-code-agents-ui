@@ -717,19 +717,19 @@ function handleOpenFile(filePath: string) {
           <div class="flex items-center gap-2 min-w-0 flex-1">
           <!-- History Mode - Session Info -->
           <template v-if="viewMode === 'history'">
-            <div class="flex flex-col justify-center min-w-0 py-0.5">
+            <div class="grid min-w-0 py-0.5 flex-1">
               <!-- Session Name -->
-              <span class="text-[13px] font-medium break-all max-w-full leading-tight" style="color: var(--text-primary);">
+              <div class="text-[13px] font-medium leading-tight text-ellipsis overflow-hidden whitespace-nowrap" style="color: var(--text-primary);">
                 {{ currentSessionSummary || 'Session' }}
-              </span>
+              </div>
               <!-- Folder Name -->
-              <span
+              <div
                 v-if="currentProjectDisplayName"
-                class="text-[9px] md:text-[10px] font-mono truncate leading-tight mt-0.5"
+                class="text-[9px] md:text-[10px] font-mono leading-tight mt-0.5 text-ellipsis overflow-hidden whitespace-nowrap"
                 style="color: var(--text-tertiary);"
               >
                 {{ currentProjectDisplayName }}
-              </span>
+              </div>
             </div>
           </template>
 
