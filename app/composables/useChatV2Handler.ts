@@ -20,6 +20,7 @@ export function useChatV2Handler() {
   const isConnected = ref(false)
   const error = ref<string | null>(null)
   const currentSessionId = ref<string | null>(null)
+  const sessionCreatedWorkingDir = ref<string | null>(null)
 
   // Integrate streaming buffer
   const streamingBuffer = useStreamingBuffer()
@@ -173,6 +174,10 @@ export function useChatV2Handler() {
 
         currentSessionId.value = newSessionId
         sessionStore.setActiveSession(currentSessionId.value)
+        // Capture the working dir from the server so the watcher can find the right project
+        if (message.metadata?.workingDir) {
+          sessionCreatedWorkingDir.value = message.metadata.workingDir as string
+        }
         break
 
       case 'stream_delta':
@@ -519,6 +524,7 @@ export function useChatV2Handler() {
     isConnected: readonly(isConnected),
     error: readonly(error),
     currentSessionId: readonly(currentSessionId),
+    sessionCreatedWorkingDir: readonly(sessionCreatedWorkingDir),
 
     // Streaming state
     isStreaming: streamingBuffer.isStreaming,

@@ -273,6 +273,9 @@ export const claudeProvider: ProviderAdapter = {
               content: capturedSessionId,
               newSessionId: capturedSessionId,
               provider: 'claude',
+              metadata: {
+                workingDir: options.workingDir || process.cwd(),
+              },
             })
           }
         } else if (isRealSessionId && capturedSessionId && !activeQueries.has(capturedSessionId)) {

@@ -23,6 +23,7 @@ const {
   isConnected,
   error,
   currentSessionId,
+  sessionCreatedWorkingDir,
   isStreaming,
   streamingText,
   permissions,
@@ -646,53 +647,62 @@ function handleNewChat(payload?: { workingDir?: string; projectDisplayName?: str
 }
 
 
+// Helper: find project by path and refresh its session list, with one retry for timing
+async function refreshProjectForNewSession(newId: string, workingDir: string) {
+  const normalizedDir = workingDir.replace(/\/$/, '')
+  let matchingProject = history.projects.value.find(p => p.path.replace(/\/$/, '') === normalizedDir)
+
+  if (!matchingProject) {
+    // Project may be brand new — refetch and try once more
+    await history.fetchProjects()
+    matchingProject = history.projects.value.find(p => p.path.replace(/\/$/, '') === normalizedDir)
+  }
+
+  if (!matchingProject) return
+
+  // Update sidebar state
+  urlProjectName.value = matchingProject.name
+  currentProjectDisplayName.value = matchingProject.displayName
+  history.selectedProject.value = matchingProject
+
+  // Refresh sessions list
+  await history.fetchSessions(matchingProject.name)
+  urlSessionId.value = newId
+
+  let newSession = history.sessions.value.find(s => s.id === newId)
+
+  if (!newSession) {
+    // JSONL may not be flushed yet — wait briefly and retry once
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    await history.fetchSessions(matchingProject.name)
+    newSession = history.sessions.value.find(s => s.id === newId)
+  }
+
+  if (newSession) {
+    currentSessionSummary.value = newSession.summary
+    history.selectedSession.value = newSession
+  }
+
+  // Update URL (replace so back button skips the empty new-chat state)
+  await navigateTo(
+    `/cli/project/${encodeURIComponent(matchingProject.name)}/session/${encodeURIComponent(newId)}`,
+    { replace: true }
+  )
+}
+
 // Watch for session created event from SDK
 watch(currentSessionId, async (newId, oldId) => {
-  if (newId && (!oldId || oldId.startsWith('new-session-'))) {
+  if (newId && !newId.startsWith('new-session-') && (!oldId || oldId.startsWith('new-session-'))) {
     console.log('[ChatV2] New session created, refreshing history:', newId)
-    
-    // Refresh the projects list first
-    await history.fetchProjects()
-    
-    // If we have a working directory, try to find the matching project
-    if (localWorkingDir.value) {
-      const projects = history.projects.value
-      // Normalize path for matching (remove trailing slash)
-      const normalizedDir = localWorkingDir.value.replace(/\/$/, '')
-      const matchingProject = projects.find(p => p.path.replace(/\/$/, '') === normalizedDir)
-      
-      if (matchingProject) {
-        // Switch view to sessions for this project in the sidebar
-        urlProjectName.value = matchingProject.name
-        currentProjectDisplayName.value = matchingProject.displayName
-        
-        // Update shared state for sidebar to know which project is selected
-        history.selectedProject.value = matchingProject
-        
-        // Refresh sessions list for this project to include the new one
-        await history.fetchSessions(matchingProject.name)
-        
-        // Mark this session as selected in history UI
-        urlSessionId.value = newId
-        
-        // Find the newly created session in the list to get its summary
-        const newSession = history.sessions.value.find(s => s.id === newId)
-        if (newSession) {
-          currentSessionSummary.value = newSession.summary
-          history.selectedSession.value = newSession
-        }
 
-        // Update URL to reflect the newly created session
-        // Use replace:true so back button skips the "new chat" empty state
-        await navigateTo(
-          `/cli/project/${encodeURIComponent(matchingProject.name)}/session/${encodeURIComponent(newId)}`,
-          { replace: true }
-        )
-      } else {
-        // If not matching any project yet, we could still refresh projects
-        // in case a new project folder was created by the SDK
-        await history.fetchProjects()
-      }
+    // Refresh projects so the list is up to date
+    await history.fetchProjects()
+
+    // Use the working dir reported by the server (most accurate) or fall back to local state
+    const effectiveWorkingDir = sessionCreatedWorkingDir.value || localWorkingDir.value
+
+    if (effectiveWorkingDir) {
+      await refreshProjectForNewSession(newId, effectiveWorkingDir)
     }
   }
 })
@@ -772,8 +782,9 @@ watch(
 
       if (sessionId) {
         // Full session URL: /cli/project/:projectName/session/:sessionId
-        // Guard: already showing this session
-        if (urlProjectName.value === resolvedProjectName && urlSessionId.value === sessionId && viewMode.value === 'history') return
+        // Guard: already showing this session (history mode) or actively live-chatting it (live mode)
+        if (urlProjectName.value === resolvedProjectName && urlSessionId.value === sessionId &&
+          (viewMode.value === 'history' || (viewMode.value === 'live' && currentSessionId.value === sessionId))) return
 
         const session = history.sessions.value.find(s => s.id === sessionId)
         const sessionSummary = session?.summary || ''
