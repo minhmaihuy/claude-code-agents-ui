@@ -9,13 +9,14 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'permissionRespond', permissionId: string, decision: 'allow' | 'deny', remember?: boolean): void
+  (e: 'permissionRespond', permissionId: string, decision: 'allow' | 'deny', remember?: boolean, updatedInput?: any): void
   (e: 'openFile', filePath: string): void
 }>()
 
 // Collapsible states
 const showThinking = ref(false)
 const showToolDetails = ref(false)
+const showAskUserHistory = ref(false)
 const copied = ref(false)
 
 // Format and render content (async for Shiki highlighting)
@@ -36,6 +37,22 @@ const toolFileName = computed(() => {
 
   // Common patterns for file paths in tool inputs
   const input = props.message.toolInput
+  
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    // Try to extract known fields via regex if JSON is partial
+    // Support file_path, path, filePath, filename, pattern
+    const filePathMatch = raw.match(/"(?:file_path|path|filePath|filename|pattern)"\s*:\s*"([^"]*)"/)
+    if (filePathMatch) return filePathMatch[1]
+    
+    // Fallback: if the whole thing is just a string in quotes
+    const stringMatch = raw.match(/^\s*"([^"]*)"?\s*$/)
+    if (stringMatch) return stringMatch[1]
+
+    return null
+  }
+
   if (typeof input === 'string') return input
   if (input.file_path) return input.file_path
   if (input.path) return input.path
@@ -68,16 +85,141 @@ async function copyContent() {
 
 // Handle file click
 function handleFileClick() {
-  if (toolFileName.value) {
-    emit('openFile', toolFileName.value)
+  const filePath = toolFileName.value || planFilePath.value
+  if (filePath) {
+    emit('openFile', filePath)
+  }
+}
+
+// Permission decision state — derived from store-persisted message fields
+const permissionDecision = computed(() => props.message.resolvedDecision ?? null)
+const submittedAnswer = computed(() => props.message.resolvedAnswer ?? null)
+
+// Check if this is an AskUserQuestion tool
+const isAskUserQuestion = computed(() => {
+  const tn = props.message.toolName?.toLowerCase() || ''
+  return ['askuserquestion', 'ask_user', 'askuser', 'ask_user_question', 'prompt', 'input_request'].includes(tn)
+})
+
+// Parse AskUserQuestion input into structured data
+interface AskUserQuestionItem {
+  question: string
+  header?: string
+  options?: Array<{ label: string; description?: string }>
+  multiSelect?: boolean
+}
+
+const askUserQuestions = computed<AskUserQuestionItem[] | null>(() => {
+  if (!isAskUserQuestion.value || !props.message.toolInput) return null
+  const input = props.message.toolInput
+
+  // If input is just a string, wrap it
+  if (typeof input === 'string') {
+    return [{ question: input }]
+  }
+
+  // If it's the standard structured format from claudecodeui or Gemini
+  if (input.questions && Array.isArray(input.questions)) {
+    return input.questions
+  }
+
+  // Single question format variants
+  const question = input.question || input.message || input.prompt || input.text || input.content
+  if (question) {
+    return [{
+      question: typeof question === 'string' ? question : JSON.stringify(question),
+      header: input.header || input.title,
+      options: input.options || input.choices,
+      multiSelect: input.multiSelect || input.multiple || false,
+    }]
+  }
+
+  // Fallback: if it's an object but we don't recognize the fields, use the first string field or stringify
+  const firstStringField = Object.values(input).find(v => typeof v === 'string')
+  if (firstStringField) {
+    return [{ question: firstStringField as string }]
+  }
+
+  return [{ question: JSON.stringify(input) }]
+})
+
+// Track selected answers for AskUserQuestion (per question index -> selected option labels)
+const selectedAnswers = ref<Map<number, Set<string>>>(new Map())
+
+function toggleAnswer(questionIndex: number, optionLabel: string, multiSelect: boolean) {
+  const current = selectedAnswers.value.get(questionIndex) ?? new Set<string>()
+  if (multiSelect) {
+    if (current.has(optionLabel)) {
+      current.delete(optionLabel)
+    } else {
+      current.add(optionLabel)
+    }
+  } else {
+    current.clear()
+    current.add(optionLabel)
+  }
+  selectedAnswers.value.set(questionIndex, current)
+  // Force reactivity
+  selectedAnswers.value = new Map(selectedAnswers.value)
+
+  // For single-select with only one question, auto-submit on selection
+  if (!multiSelect && askUserQuestions.value && askUserQuestions.value.length === 1) {
+    handlePermissionAllow(false)
+  }
+}
+
+function isAnswerSelected(questionIndex: number, optionLabel: string): boolean {
+  return selectedAnswers.value.get(questionIndex)?.has(optionLabel) ?? false
+}
+
+// Check if a specific option label is part of the submittedAnswer string
+function isOptionSubmitted(optionLabel: string): boolean {
+  if (!submittedAnswer.value) return false
+  const labels = submittedAnswer.value.split(',').map(s => s.trim())
+  return labels.includes(optionLabel)
+}
+
+// Check if any answer has been selected
+const hasSelectedAnswer = computed(() => {
+  if (!askUserQuestions.value) return false
+  for (let i = 0; i < askUserQuestions.value.length; i++) {
+    const selected = selectedAnswers.value.get(i)
+    if (selected && selected.size > 0) return true
+  }
+  return false
+})
+
+// Build updatedInput with answers for AskUserQuestion
+// The SDK expects `answers` as { [questionText]: "selected label" } (comma-separated for multi-select)
+function buildUpdatedInput(): any {
+  if (!isAskUserQuestion.value || !askUserQuestions.value) return undefined
+  const questions = askUserQuestions.value
+  const answers: Record<string, string> = {}
+  for (let i = 0; i < questions.length; i++) {
+    const selected = selectedAnswers.value.get(i)
+    if (selected && selected.size > 0) {
+      answers[questions[i].question] = Array.from(selected).join(', ')
+    }
+  }
+
+  // Handle both object and string input
+  const baseInput = typeof props.message.toolInput === 'object'
+    ? JSON.parse(JSON.stringify(props.message.toolInput))
+    : { question: props.message.toolInput }
+
+  return {
+    ...baseInput,
+    answers,
   }
 }
 
 // Handle permission response
+// Decision state is persisted by useChatV2Handler.respondToPermission -> sessionStore.updateMessageDecision
 function handlePermissionAllow(remember = false) {
   const permId = props.message.requestId || props.message.id
   if (permId) {
-    emit('permissionRespond', permId, 'allow', remember)
+    const updatedInput = buildUpdatedInput()
+    emit('permissionRespond', permId, 'allow', remember, updatedInput)
   }
 }
 
@@ -90,63 +232,102 @@ function handlePermissionDeny() {
 
 // Get tool icon based on tool name
 function getToolIcon(toolName: string): string {
-  const toolIcons: Record<string, string> = {
-    'Read': 'i-lucide-file-text',
-    'Write': 'i-lucide-file-plus',
-    'Edit': 'i-lucide-file-edit',
-    'Bash': 'i-lucide-terminal',
-    'Glob': 'i-lucide-search',
-    'Grep': 'i-lucide-search-code',
-    'WebFetch': 'i-lucide-globe',
-    'WebSearch': 'i-lucide-search',
-    'Task': 'i-lucide-list-todo',
-  }
-  return toolIcons[toolName] || 'i-lucide-wrench'
+  const tn = toolName.toLowerCase()
+  if (tn.includes('read')) return 'i-lucide-file-text'
+  if (tn.includes('write')) return 'i-lucide-file-plus'
+  if (tn.includes('edit') || tn.includes('replace')) return 'i-lucide-file-edit'
+  if (tn.includes('bash') || tn.includes('shell')) return 'i-lucide-terminal'
+  if (tn.includes('glob')) return 'i-lucide-search'
+  if (tn.includes('grep')) return 'i-lucide-search-code'
+  if (tn.includes('fetch')) return 'i-lucide-globe'
+  if (tn.includes('search')) return 'i-lucide-search'
+  if (tn.includes('task')) return 'i-lucide-list-todo'
+  
+  return 'i-lucide-wrench'
 }
 
 // Get tool color
 function getToolColor(toolName: string): string {
-  const toolColors: Record<string, string> = {
-    'Read': '#3b82f6',
-    'Write': '#22c55e',
-    'Edit': '#f59e0b',
-    'Bash': '#8b5cf6',
-    'Glob': '#06b6d4',
-    'Grep': '#06b6d4',
-    'TodoWrite': '#22c55e',
-  }
-  return toolColors[toolName] || 'var(--accent)'
+  const tn = toolName.toLowerCase()
+  if (tn.includes('read')) return '#3b82f6'
+  if (tn.includes('write')) return '#22c55e'
+  if (tn.includes('edit') || tn.includes('replace')) return '#f59e0b'
+  if (tn.includes('bash') || tn.includes('shell')) return '#8b5cf6'
+  if (tn.includes('glob') || tn.includes('grep')) return '#06b6d4'
+  if (tn.includes('todo')) return '#22c55e'
+  
+  return 'var(--accent)'
 }
 
 // Check if this is a TodoWrite tool
-const isTodoWrite = computed(() => props.message.toolName === 'TodoWrite')
+const isTodoWrite = computed(() => (props.message.toolName || '').toLowerCase() === 'todowrite')
 
 // Check if this is a Skill tool
-const isSkill = computed(() => props.message.toolName === 'Skill')
+const isSkill = computed(() => (props.message.toolName || '').toLowerCase() === 'skill')
 
 // Get skill name from input
 const skillName = computed(() => {
   if (!isSkill.value || !props.message.toolInput) return null
-  return props.message.toolInput.skill || null
+  const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const skillMatch = raw.match(/"skill"\s*:\s*"([^"]*)"/)
+    if (skillMatch) return skillMatch[1]
+    return null
+  }
+
+  return input.skill || null
 })
 
 // Check if this is an Agent tool
-const isAgent = computed(() => props.message.toolName === 'Agent')
+const isAgent = computed(() => (props.message.toolName || '').toLowerCase() === 'agent')
 
 // Get agent details from input
 const agentSubtype = computed(() => {
   if (!isAgent.value || !props.message.toolInput) return null
-  return props.message.toolInput.subagent_type || null
+  const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const match = raw.match(/"subagent_type"\s*:\s*"([^"]*)"/)
+    if (match) return match[1]
+    return null
+  }
+
+  return input.subagent_type || null
 })
 
 const agentDescription = computed(() => {
   if (!isAgent.value || !props.message.toolInput) return null
-  return props.message.toolInput.description || null
+  const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const match = raw.match(/"description"\s*:\s*"([^"]*)"/)
+    if (match) return match[1]
+    return null
+  }
+
+  return input.description || null
 })
 
 const agentPrompt = computed(() => {
   if (!isAgent.value || !props.message.toolInput) return null
-  return props.message.toolInput.prompt || null
+  const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const match = raw.match(/"prompt"\s*:\s*"([^"]*)"/)
+    if (match) return match[1]
+    return null
+  }
+
+  return input.prompt || null
 })
 
 // Render agent prompt as markdown
@@ -163,45 +344,100 @@ watchEffect(async () => {
 
 // Check if this is a Task tool (TaskCreate, TaskUpdate, TaskGet, TaskList)
 const isTask = computed(() => {
-  const name = props.message.toolName || ''
-  return name.startsWith('Task')
+  const name = (props.message.toolName || '').toLowerCase()
+  return name.startsWith('task')
 })
 
 // Get task action (Create, Update, Get, List)
 const taskAction = computed(() => {
   if (!isTask.value) return null
-  return (props.message.toolName || '').replace('Task', '')
+  const name = props.message.toolName || ''
+  if (name.toLowerCase().startsWith('task')) {
+    return name.slice(4) // Keep original casing for the action part (e.g. Create)
+  }
+  return name
 })
 
 // Get task details from input
 const taskSubject = computed(() => {
   if (!isTask.value || !props.message.toolInput) return null
-  return props.message.toolInput.subject || null
+  const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const match = raw.match(/"subject"\s*:\s*"([^"]*)"/)
+    if (match) return match[1]
+    return null
+  }
+
+  return input.subject || null
 })
 
 const taskDescription = computed(() => {
   if (!isTask.value || !props.message.toolInput) return null
-  return props.message.toolInput.description || null
+  const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const match = raw.match(/"description"\s*:\s*"([^"]*)"/)
+    if (match) return match[1]
+    return null
+  }
+
+  return input.description || null
 })
 
 const taskActiveForm = computed(() => {
   if (!isTask.value || !props.message.toolInput) return null
-  return props.message.toolInput.activeForm || null
+  const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const match = raw.match(/"activeForm"\s*:\s*"([^"]*)"/)
+    if (match) return match[1]
+    return null
+  }
+
+  return input.activeForm || null
 })
 
 const taskStatus = computed(() => {
   if (!isTask.value || !props.message.toolInput) return null
-  return props.message.toolInput.status || null
+  const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const match = raw.match(/"status"\s*:\s*"([^"]*)"/)
+    if (match) return match[1]
+    return null
+  }
+
+  return input.status || null
 })
 
 const taskId = computed(() => {
   if (!isTask.value || !props.message.toolInput) return null
-  return props.message.toolInput.taskId || null
+  const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const match = raw.match(/"taskId"\s*:\s*"([^"]*)"/)
+    if (match) return match[1]
+    return null
+  }
+
+  return input.taskId || null
 })
 
 // Task status styling
 function getTaskStatusStyle(status: string): { bg: string; color: string; icon: string } {
-  switch (status) {
+  const s = status.toLowerCase()
+  switch (s) {
     case 'completed':
       return { bg: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', icon: 'i-lucide-check-circle-2' }
     case 'in_progress':
@@ -215,29 +451,88 @@ function getTaskStatusStyle(status: string): { bg: string; color: string; icon: 
 
 // Task action color
 function getTaskActionColor(action: string): string {
-  switch (action) {
-    case 'Create': return '#22c55e'
-    case 'Update': return '#3b82f6'
-    case 'Get': return '#06b6d4'
-    case 'List': return '#8b5cf6'
-    default: return 'var(--accent)'
-  }
+  const a = action.toLowerCase()
+  if (a.includes('create')) return '#22c55e'
+  if (a.includes('update')) return '#3b82f6'
+  if (a.includes('get')) return '#06b6d4'
+  if (a.includes('list')) return '#8b5cf6'
+  return 'var(--accent)'
 }
 
 // Check if this is a Bash tool
-const isBash = computed(() => props.message.toolName === 'Bash')
+const isBash = computed(() => (props.message.toolName || '').toLowerCase() === 'bash')
 
 // Get bash command and description
 const bashCommand = computed(() => {
   if (!isBash.value || !props.message.toolInput) return null
   const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const commandMatch = raw.match(/"command"\s*:\s*"([^"]*)"/)
+    if (commandMatch) return commandMatch[1]
+    return null
+  }
+
   return input.command || null
 })
 
 const bashDescription = computed(() => {
   if (!isBash.value || !props.message.toolInput) return null
   const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const descMatch = raw.match(/"description"\s*:\s*"([^"]*)"/)
+    if (descMatch) return descMatch[1]
+    return null
+  }
+
   return input.description || null
+})
+
+// Check if this is a ToolSearch tool
+const isToolSearch = computed(() => (props.message.toolName || '').toLowerCase() === 'toolsearch')
+
+// Get tool search query
+const toolSearchQuery = computed(() => {
+  if (!isToolSearch.value || !props.message.toolInput) return null
+  const input = props.message.toolInput
+
+  // Handle partial JSON from streaming
+  if (input && typeof input === 'object' && '_partialJson' in input) {
+    const raw = input._partialJson as string
+    const queryMatch = raw.match(/"query"\s*:\s*"([^"]*)"/)
+    if (queryMatch) return queryMatch[1]
+    return null
+  }
+
+  return input.query || null
+})
+
+// Check if this is an ExitPlanMode tool
+const isExitPlanMode = computed(() => (props.message.toolName || '').toLowerCase() === 'exitplanmode')
+
+// Get plan content and path
+const planContent = computed(() => props.message.toolInput?.plan || '')
+const planFilePath = computed(() => props.message.toolInput?.planFilePath || '')
+const planFileName = computed(() => {
+  const p = planFilePath.value
+  return p ? p.split('/').pop() || p : ''
+})
+
+// Render plan as markdown
+const renderedPlan = ref('')
+const showPlan = ref(false)
+
+watchEffect(async () => {
+  if (!planContent.value) {
+    renderedPlan.value = ''
+    return
+  }
+  renderedPlan.value = await renderMarkdownWithHighlighting(planContent.value)
 })
 
 // Parse todo items from TodoWrite input
@@ -479,8 +774,8 @@ function getTodoStatusBadge(status: string): { bg: string; color: string; label:
       </div>
     </template>
 
-    <!-- Tool Use - Read/Write show filename only, Glob shows pattern (non-clickable) -->
-    <template v-else-if="message.kind === 'tool_use' && ['Read', 'Write', 'Glob'].includes(message.toolName || '')">
+    <!-- Tool Use - Read show filename only, Glob shows pattern, ToolSearch shows query (non-clickable) -->
+    <template v-else-if="message.kind === 'tool_use' && ['read', 'glob', 'toolsearch', 'read_file', 'glob_search'].includes((message.toolName || '').toLowerCase())">
       <div class="flex items-start gap-2">
         <!-- Left border indicator -->
         <div
@@ -492,8 +787,8 @@ function getTodoStatusBadge(status: string): { bg: string; color: string; label:
           <div class="text-[12px] flex items-center gap-2 flex-wrap">
             <span style="color: var(--text-secondary);">{{ message.toolName }}</span>
 
-            <!-- Clickable filename for Read/Write -->
-            <template v-if="message.toolName !== 'Glob' && displayFileName">
+            <!-- Clickable filename for Read -->
+            <template v-if="['read', 'read_file'].includes((message.toolName || '').toLowerCase()) && displayFileName">
               <span style="color: var(--text-tertiary);">/</span>
               <span
                 class="font-medium cursor-pointer hover:underline break-all"
@@ -506,10 +801,18 @@ function getTodoStatusBadge(status: string): { bg: string; color: string; label:
             </template>
 
             <!-- Non-clickable pattern for Glob -->
-            <template v-else-if="message.toolName === 'Glob' && toolFileName">
+            <template v-else-if="['glob', 'glob_search'].includes((message.toolName || '').toLowerCase()) && toolFileName">
               <span style="color: var(--text-tertiary);">:</span>
               <span class="font-mono text-[11px] text-meta break-all" :title="toolFileName">
                 {{ toolFileName }}
+              </span>
+            </template>
+
+            <!-- Non-clickable query for ToolSearch -->
+            <template v-else-if="['toolsearch', 'tool_search'].includes((message.toolName || '').toLowerCase()) && toolSearchQuery">
+              <span style="color: var(--text-tertiary);">/</span>
+              <span class="font-medium break-all" style="color: var(--text-accent);">
+                {{ toolSearchQuery }}
               </span>
             </template>
 
@@ -567,6 +870,54 @@ function getTodoStatusBadge(status: string): { bg: string; color: string; label:
               class="prose prose-sm max-w-none leading-relaxed"
               style="color: var(--text-secondary);"
               v-html="renderedAgentPrompt"
+            />
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ExitPlanMode - Show plan path with collapsible plan content -->
+    <template v-else-if="message.kind === 'tool_use' && isExitPlanMode">
+      <div class="flex items-start gap-2">
+        <!-- Left border indicator -->
+        <div
+          class="w-0.5 self-stretch rounded-full shrink-0"
+          style="background: var(--accent-secondary);"
+        />
+
+        <div class="flex-1 min-w-0">
+          <!-- Header (clickable to expand/collapse plan) -->
+          <button
+            class="inline-flex items-center gap-1.5 text-[12px] font-medium"
+            style="color: var(--text-secondary);"
+            @click="showPlan = !showPlan"
+          >
+            <UIcon
+              :name="showPlan ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+              class="size-3"
+            />
+            <span>ExitPlanMode</span>
+            <template v-if="planFilePath">
+              <span style="color: var(--text-tertiary);">/</span>
+              <span
+                class="truncate cursor-pointer hover:underline"
+                style="color: var(--text-indigo);"
+                :title="planFilePath"
+                @click.stop="handleFileClick"
+              >{{ planFileName }}</span>
+            </template>
+          </button>
+
+          <!-- Expandable plan rendered as markdown -->
+          <div
+            v-if="showPlan && renderedPlan"
+            class="mt-2 p-3 rounded-lg text-[12px] break-words border border-dashed"
+            style="background: var(--surface-raised); border-color: var(--accent);"
+          >
+            <div
+              class="prose prose-sm max-w-none leading-relaxed"
+              style="color: var(--text-primary);"
+              v-html="renderedPlan"
             />
           </div>
         </div>
@@ -685,14 +1036,14 @@ function getTodoStatusBadge(status: string): { bg: string; color: string; label:
         <div class="flex-1 min-w-0">
           <!-- Tool header (clickable only if not Edit/Write or if Error) -->
           <component
-            :is="(['Edit', 'Write', 'ApplyPatch'].includes(message.toolName || '') && !message.isError) ? 'div' : 'button'"
+            :is="(['edit', 'write', 'applypatch', 'replace', 'write_file', 'apply_patch'].includes((message.toolName || '').toLowerCase()) && !message.isError) ? 'div' : 'button'"
             class="inline-flex items-center gap-1.5 text-[12px] font-medium w-full text-left"
-            :class="{ 'cursor-default': (['Edit', 'Write', 'ApplyPatch'].includes(message.toolName || '') && !message.isError) }"
+            :class="{ 'cursor-default': (['edit', 'write', 'applypatch', 'replace', 'write_file', 'apply_patch'].includes((message.toolName || '').toLowerCase()) && !message.isError) }"
             style="color: var(--text-secondary);"
-            @click="(['Edit', 'Write', 'ApplyPatch'].includes(message.toolName || '') && !message.isError) ? null : showToolDetails = !showToolDetails"
+            @click="(['edit', 'write', 'applypatch', 'replace', 'write_file', 'apply_patch'].includes((message.toolName || '').toLowerCase()) && !message.isError) ? null : showToolDetails = !showToolDetails"
           >
             <UIcon
-              v-if="!(['Edit', 'Write', 'ApplyPatch'].includes(message.toolName || '') && !message.isError)"
+              v-if="!(['edit', 'write', 'applypatch', 'replace', 'write_file', 'apply_patch'].includes((message.toolName || '').toLowerCase()) && !message.isError)"
               :name="showToolDetails ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
               class="size-3"
             />
@@ -720,8 +1071,8 @@ function getTodoStatusBadge(status: string): { bg: string; color: string; label:
             </span>
           </component>
 
-          <!-- Diff viewer for Edit/Write tools -->
-          <div v-if="['Edit', 'Write', 'ApplyPatch'].includes(message.toolName || '') && !message.isError && toolFileName" class="mt-1">
+          <!-- Diff viewer for Edit/Write tools (only when diff data exists) -->
+          <div v-if="['edit', 'write', 'applypatch', 'replace', 'write_file', 'apply_patch'].includes((message.toolName || '').toLowerCase()) && !message.isError && toolFileName && (message.toolInput?.old_string !== undefined || message.toolInput?.new_string !== undefined)" class="mt-1">
             <ToolDiffViewer
               :file-path="toolFileName"
               :old-content="message.toolInput?.old_string"
@@ -731,7 +1082,7 @@ function getTodoStatusBadge(status: string): { bg: string; color: string; label:
           </div>
 
           <!-- Expanded details (only for non-Edit/Write or errors) -->
-          <div v-if="showToolDetails && !(['Edit', 'Write', 'ApplyPatch'].includes(message.toolName || '') && !message.isError)" class="mt-2 space-y-2 max-w-full overflow-hidden">
+          <div v-if="showToolDetails && !(['edit', 'write', 'applypatch', 'replace', 'write_file', 'apply_patch'].includes((message.toolName || '').toLowerCase()) && !message.isError)" class="mt-2 space-y-2 max-w-full overflow-hidden">
             <!-- Input -->
             <div v-if="message.toolInput">
               <div class="text-[10px] font-medium mb-1" style="color: var(--text-tertiary);">Input</div>
@@ -759,48 +1110,201 @@ function getTodoStatusBadge(status: string): { bg: string; color: string; label:
 
     <!-- Permission Request -->
     <template v-else-if="message.kind === 'permission_request'">
+      <!-- After decision: show compact result -->
+      <div v-if="permissionDecision" class="flex flex-col gap-1.5 py-1">
+        <!-- Collapsible AskUserQuestion History -->
+        <template v-if="isAskUserQuestion && askUserQuestions">
+          <button
+            class="flex items-start gap-1.5 text-[11px] md:text-[12px] w-full text-left"
+            style="color: var(--text-secondary);"
+            @click="showAskUserHistory = !showAskUserHistory"
+          >
+            <UIcon
+              :name="showAskUserHistory ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+              class="size-3 mt-0.5 shrink-0"
+            />
+            <span class="font-medium flex-1 whitespace-normal">{{ askUserQuestions[0].question }}</span>
+            <span v-if="askUserQuestions.length > 1" class="text-[10px] shrink-0" style="color: var(--text-tertiary);">
+              (+{{ askUserQuestions.length - 1 }} more)
+            </span>
+          </button>
+
+          <!-- Expanded View: Questions + Options -->
+          <div v-if="showAskUserHistory" class="mt-1 space-y-3 pl-4 border-l-2 border-accent/20">
+            <div v-for="(q, qi) in askUserQuestions" :key="qi">
+              <p v-if="q.header" class="text-[11px] font-bold mb-0.5 whitespace-normal" style="color: var(--text-primary);">
+                {{ q.header }}
+              </p>
+              <p class="text-[11px] md:text-[12px] mb-1.5 whitespace-normal" style="color: var(--text-secondary);">
+                {{ q.question }}
+              </p>
+              
+              <!-- Show original options if available -->
+              <div v-if="q.options && q.options.length" class="space-y-1">
+                <div
+                  v-for="(opt, oi) in q.options"
+                  :key="oi"
+                  class="flex items-start gap-2 px-2 py-1 rounded text-[11px]"
+                  :style="{
+                    background: isOptionSubmitted(opt.label) ? 'rgba(229, 169, 62, 0.1)' : 'var(--surface-raised)',
+                    border: isOptionSubmitted(opt.label) ? '1px solid var(--accent)' : '1px solid transparent',
+                  }"
+                >
+                  <UIcon
+                    :name="isOptionSubmitted(opt.label) ? 'i-lucide-check-circle-2' : 'i-lucide-circle'"
+                    class="size-3 mt-0.5 shrink-0"
+                    :style="{ color: isOptionSubmitted(opt.label) ? 'var(--accent)' : 'var(--text-tertiary)' }"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <span class="whitespace-normal" :style="{ color: isOptionSubmitted(opt.label) ? 'var(--text-primary)' : 'var(--text-secondary)' }">
+                      {{ opt.label }}
+                    </span>
+                    <p v-if="opt.description" class="text-[10px] opacity-70 whitespace-normal" style="color: var(--text-tertiary);">
+                      {{ opt.description }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Status Line -->
+        <div class="flex items-start gap-2" :class="{ 'mt-1': showAskUserHistory }">
+          <!-- AskUserQuestion Allow: show "Submitted: <answer>" -->
+          <template v-if="isAskUserQuestion && permissionDecision === 'allow' && submittedAnswer !== null">
+            <UIcon name="i-lucide-message-square-reply" class="size-3.5 mt-0.5 shrink-0" style="color: #3b82f6;" />
+            <span class="text-[11px] md:text-[12px] flex-1 whitespace-normal" style="color: var(--text-secondary);">
+              <span class="font-medium" style="color: #3b82f6;">Submitted:</span>
+              <span class="ml-1" style="color: var(--text-primary);">{{ submittedAnswer }}</span>
+            </span>
+          </template>
+          <!-- Other tools or Denied AskUserQuestion: show Allowed/Denied -->
+          <template v-else>
+            <UIcon
+              :name="permissionDecision === 'allow' ? 'i-lucide-shield-check' : 'i-lucide-shield-x'"
+              class="size-3.5"
+              :style="{ color: permissionDecision === 'allow' ? '#22c55e' : '#ef4444' }"
+            />
+            <span class="text-[11px] md:text-[12px]" style="color: var(--text-secondary);">
+              <span class="font-medium" :style="{ color: permissionDecision === 'allow' ? '#22c55e' : '#ef4444' }">
+                {{ permissionDecision === 'allow' ? 'Allowed' : 'Denied' }}
+              </span>
+              <span class="font-mono ml-1" style="color: var(--text-tertiary);">{{ message.toolName || 'Tool' }}</span>
+            </span>
+          </template>
+        </div>
+      </div>
+
+      <!-- Pending: show permission request -->
       <div
+        v-else
         class="px-3 py-2 md:px-4 md:py-3 rounded-xl border-2"
         style="background: rgba(229, 169, 62, 0.05); border-color: var(--accent);"
       >
         <div class="flex items-center gap-2 mb-2">
           <UIcon name="i-lucide-shield-question" class="size-3.5 md:size-4" style="color: var(--accent);" />
           <span class="text-[11px] md:text-[12px] font-semibold" style="color: var(--text-primary);">
-            Permission Required
+            Action Required
           </span>
         </div>
 
-        <p class="text-[11px] md:text-[12px] mb-3" style="color: var(--text-secondary);">
-          <span class="font-mono font-semibold" style="color: var(--text-primary);">{{ message.toolName || 'Tool' }}</span> wants to perform an action:
-        </p>
+        <!-- AskUserQuestion: render as formatted text -->
+        <template v-if="isAskUserQuestion && askUserQuestions">
+          <div v-for="(q, qi) in askUserQuestions" :key="qi" class="mb-3">
+            <p v-if="q.header" class="text-[11px] md:text-[12px] font-semibold mb-1 whitespace-normal" style="color: var(--text-primary);">
+              {{ q.header }}
+            </p>
+            <p class="text-[11px] md:text-[12px] mb-2 whitespace-normal" style="color: var(--text-secondary);">
+              {{ q.question }}
+            </p>
+            <div v-if="q.options && q.options.length" class="space-y-1.5">
+              <button
+                v-for="(opt, oi) in q.options"
+                :key="oi"
+                class="flex items-start gap-2 px-2.5 py-1.5 rounded-lg w-full text-left transition-all"
+                :style="{
+                  background: isAnswerSelected(qi, opt.label) ? 'rgba(229, 169, 62, 0.15)' : 'var(--surface-raised)',
+                  borderWidth: '1px',
+                  borderStyle: 'solid',
+                  borderColor: isAnswerSelected(qi, opt.label) ? 'var(--accent)' : 'transparent',
+                }"
+                @click="toggleAnswer(qi, opt.label, !!q.multiSelect)"
+              >
+                <UIcon
+                  :name="isAnswerSelected(qi, opt.label)
+                    ? (q.multiSelect ? 'i-lucide-check-square' : 'i-lucide-circle-dot')
+                    : (q.multiSelect ? 'i-lucide-square' : 'i-lucide-circle')"
+                  class="size-3.5 mt-0.5 shrink-0"
+                  :style="{ color: isAnswerSelected(qi, opt.label) ? 'var(--accent)' : 'var(--text-tertiary)' }"
+                />
+                <div class="min-w-0 flex-1">
+                  <span class="text-[11px] md:text-[12px] font-medium whitespace-normal" style="color: var(--text-primary);">
+                    {{ opt.label }}
+                  </span>
+                  <p v-if="opt.description" class="text-[10px] md:text-[11px] mt-0.5 whitespace-normal" style="color: var(--text-tertiary);">
+                    {{ opt.description }}
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </template>
 
-        <pre
-          v-if="message.toolInput"
-          class="text-[10px] md:text-[11px] p-2 rounded-lg mb-3 overflow-auto max-h-24 font-mono"
-          style="background: var(--surface-raised); color: var(--text-tertiary);"
-        >{{ typeof message.toolInput === 'string' ? message.toolInput : JSON.stringify(message.toolInput, null, 2) }}</pre>
+        <!-- Other tools: show tool name and raw input -->
+        <template v-else>
+          <p class="text-[11px] md:text-[12px] mb-3 whitespace-normal" style="color: var(--text-secondary);">
+            <span class="font-mono font-semibold" style="color: var(--text-primary);">{{ message.toolName || 'Tool' }}</span> wants to perform an action:
+          </p>
 
-        <div class="flex flex-wrap items-center gap-2">
+          <pre
+            v-if="message.toolInput"
+            class="text-[10px] md:text-[11px] p-2 rounded-lg mb-3 overflow-auto max-h-24 font-mono"
+            style="background: var(--surface-raised); color: var(--text-tertiary);"
+          >{{ typeof message.toolInput === 'string' ? message.toolInput : JSON.stringify(message.toolInput, null, 2) }}</pre>
+        </template>
+
+        <!-- AskUserQuestion: Submit/Deny for multi-select, just Deny for single-select (auto-submits on click) -->
+        <div v-if="isAskUserQuestion && askUserQuestions" class="flex flex-wrap items-center gap-2">
+          <!-- Multi-select or multi-question: show explicit Submit -->
           <button
-            class="px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-lg text-[11px] md:text-[12px] font-medium transition-all hover:opacity-90"
-            style="background: var(--accent); color: white;"
+            v-if="askUserQuestions.some(q => q.multiSelect) || askUserQuestions.length > 1"
+            class="px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-lg text-[11px] md:text-[12px] font-medium transition-all"
+            :style="{
+              background: hasSelectedAnswer ? 'var(--accent)' : 'var(--surface-raised)',
+              color: hasSelectedAnswer ? 'white' : 'var(--text-tertiary)',
+              cursor: hasSelectedAnswer ? 'pointer' : 'not-allowed',
+              opacity: hasSelectedAnswer ? '1' : '0.6',
+            }"
+            :disabled="!hasSelectedAnswer"
             @click="handlePermissionAllow(false)"
           >
-            Allow
-          </button>
-          <button
-            class="px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-lg text-[11px] md:text-[12px] font-medium transition-all hover:opacity-90"
-            style="background: var(--surface-raised); color: var(--text-secondary);"
-            @click="handlePermissionAllow(true)"
-          >
-            Allow & Remember
+            Submit
           </button>
           <button
             class="px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-lg text-[11px] md:text-[12px] font-medium transition-all hover:opacity-90"
             style="background: rgba(239, 68, 68, 0.1); color: #ef4444;"
             @click="handlePermissionDeny"
           >
-            Deny
+            Cancel
+          </button>
+        </div>
+
+        <!-- Regular tools: Submit / Cancel -->
+        <div v-else class="flex flex-wrap items-center gap-2">
+          <button
+            class="px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-lg text-[11px] md:text-[12px] font-medium transition-all hover:opacity-90"
+            style="background: var(--accent); color: white;"
+            @click="handlePermissionAllow(false)"
+          >
+            Submit
+          </button>
+          <button
+            class="px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-lg text-[11px] md:text-[12px] font-medium transition-all hover:opacity-90"
+            style="background: rgba(239, 68, 68, 0.1); color: #ef4444;"
+            @click="handlePermissionDeny"
+          >
+            Cancel
           </button>
         </div>
       </div>

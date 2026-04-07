@@ -240,10 +240,21 @@ export function useSessionStore() {
   /**
    * Append a realtime (WebSocket) message to the session.
    * Works regardless of which session is actively viewed.
+   * If message with same ID exists, it UPDATES it instead of appending.
    */
   const appendRealtime = (sessionId: string, msg: NormalizedMessage) => {
     const slot = getSlot(sessionId)
-    let updated = [...slot.realtimeMessages, msg]
+    
+    const existingIdx = slot.realtimeMessages.findIndex(m => m.id === msg.id)
+    let updated: NormalizedMessage[]
+
+    if (existingIdx >= 0) {
+      updated = [...slot.realtimeMessages]
+      // Merge properties to preserve content if update doesn't have it (like status updates)
+      updated[existingIdx] = { ...updated[existingIdx], ...msg }
+    } else {
+      updated = [...slot.realtimeMessages, msg]
+    }
 
     // Limit realtime buffer size
     if (updated.length > MAX_REALTIME_MESSAGES) {
@@ -597,6 +608,43 @@ export function useSessionStore() {
   }
 
   /**
+   * Update a permission_request message with the resolved decision.
+   * Searches both realtimeMessages and serverMessages by requestId or id.
+   */
+  const updateMessageDecision = (
+    sessionId: string,
+    permissionId: string,
+    decision: 'allow' | 'deny',
+    answer?: string
+  ) => {
+    const slot = storeRef.value.get(sessionId)
+    if (!slot) return
+
+    const patchMessage = (messages: NormalizedMessage[]): NormalizedMessage[] | null => {
+      const idx = messages.findIndex(m => m.requestId === permissionId || m.id === permissionId)
+      if (idx === -1) return null
+      const updated = [...messages]
+      updated[idx] = { ...updated[idx], resolvedDecision: decision, resolvedAnswer: answer }
+      return updated
+    }
+
+    const patchedRealtime = patchMessage(slot.realtimeMessages)
+    if (patchedRealtime) {
+      slot.realtimeMessages = patchedRealtime
+    }
+
+    const patchedServer = patchMessage(slot.serverMessages)
+    if (patchedServer) {
+      slot.serverMessages = patchedServer
+    }
+
+    if (patchedRealtime || patchedServer) {
+      recomputeMergedIfNeeded(slot)
+      notify(sessionId)
+    }
+  }
+
+  /**
    * Remove expired permissions for a session
    */
   const cleanupExpiredPermissions = (sessionId: string) => {
@@ -641,6 +689,7 @@ export function useSessionStore() {
     // Chat v2: Permission management
     addPermission,
     removePermission,
+    updateMessageDecision,
     getPendingPermissions,
     hasPendingPermissions,
     setPermissionMode,

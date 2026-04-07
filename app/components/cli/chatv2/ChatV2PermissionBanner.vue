@@ -12,15 +12,15 @@ const emit = defineEmits<{
 // Show first permission (could expand to show list)
 const firstPermission = computed(() => props.permissions[0])
 
+// Check if this is an AskUserQuestion tool
+const isAskUserQuestion = computed(() => {
+  const tn = firstPermission.value?.toolName?.toLowerCase() || ''
+  return ['askuserquestion', 'ask_user', 'askuser', 'ask_user_question', 'prompt', 'input_request'].includes(tn)
+})
+
 function handleAllow() {
   if (firstPermission.value) {
     emit('respond', firstPermission.value.id, 'allow', false)
-  }
-}
-
-function handleAllowRemember() {
-  if (firstPermission.value) {
-    emit('respond', firstPermission.value.id, 'allow', true)
   }
 }
 
@@ -41,7 +41,7 @@ function handleDeny() {
       <UIcon name="i-lucide-shield-question" class="size-5 shrink-0" style="color: var(--accent);" />
       <div class="min-w-0">
         <div class="text-[12px] font-semibold break-words" style="color: var(--text-primary);">
-          Permission Required
+          Action Required
           <span
             v-if="permissions.length > 1"
             class="ml-2 px-1.5 py-0.5 rounded text-[10px] inline-block"
@@ -51,7 +51,7 @@ function handleDeny() {
           </span>
         </div>
         <div class="text-[11px] break-words" style="color: var(--text-secondary);">
-          <strong class="break-all">{{ firstPermission?.toolName }}</strong> wants to perform an action
+          <strong class="break-all">{{ firstPermission?.toolName }}</strong> {{ isAskUserQuestion ? 'is asking a question' : 'wants to perform an action' }}
         </div>
       </div>
     </div>
@@ -62,21 +62,14 @@ function handleDeny() {
         style="background: var(--accent); color: white;"
         @click="handleAllow"
       >
-        Allow
-      </button>
-      <button
-        class="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all"
-        style="background: var(--surface-raised); color: var(--text-secondary); border: 1px solid var(--border-subtle);"
-        @click="handleAllowRemember"
-      >
-        Allow & Remember
+        Submit
       </button>
       <button
         class="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all"
         style="background: rgba(205, 49, 49, 0.1); color: #cd3131;"
         @click="handleDeny"
       >
-        Deny
+        Cancel
       </button>
     </div>
   </div>

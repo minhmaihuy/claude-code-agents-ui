@@ -58,7 +58,8 @@ export interface ProviderAdapter {
    */
   respondToPermission?(
     permissionId: string,
-    decision: 'allow' | 'deny'
+    decision: 'allow' | 'deny',
+    updatedInput?: any
   ): Promise<void>
 
   /**

@@ -188,17 +188,29 @@ export function useChatV2Handler() {
         break
 
       case 'text':
-      case 'tool_result':
         // Add to session store for display
         if (sessionId) {
           sessionStore.appendRealtime(sessionId, message)
         }
         break
 
+      case 'tool_result':
+        // Ensure result uses the same well-known ID as tool_use so they match
+        if (sessionId) {
+          const toolId = message.metadata?.toolUseId || message.toolId || 'unknown'
+          const toolUseId = toolId.startsWith('__tool_') ? toolId : `__tool_${toolId}`
+          sessionStore.appendRealtime(sessionId, {
+            ...message,
+            id: toolUseId,
+          })
+        }
+        break
+
       case 'tool_use':
         // Use well-known ID for tool_use so multiple updates go to same message
         if (sessionId) {
-          const toolUseId = `__tool_${message.metadata?.toolUseId || message.toolId || 'unknown'}`
+          const toolId = message.metadata?.toolUseId || message.toolId || 'unknown'
+          const toolUseId = toolId.startsWith('__tool_') ? toolId : `__tool_${toolId}`
           sessionStore.appendRealtime(sessionId, {
             ...message,
             id: toolUseId,
@@ -422,16 +434,32 @@ export function useChatV2Handler() {
   function respondToPermission(
     permissionId: string,
     decision: 'allow' | 'deny',
-    remember = false
+    remember = false,
+    updatedInput?: any
   ): boolean {
     const message: ChatV2WebSocketMessage = {
       type: 'permission_response',
       permissionId,
       decision,
       remember,
+      ...(updatedInput !== undefined && { updatedInput }),
     }
 
-    return sendMessage(message)
+    const sent = sendMessage(message)
+
+    // Persist decision on the message in the store
+    if (sent && currentSessionId.value) {
+      // Remove from pending permissions
+      permissions.removePending(permissionId)
+
+      let answer: string | undefined
+      if (updatedInput?.answers) {
+        answer = Object.values(updatedInput.answers as Record<string, string>).join(', ')
+      }
+      sessionStore.updateMessageDecision(currentSessionId.value, permissionId, decision, answer)
+    }
+
+    return sent
   }
 
   /**

@@ -446,6 +446,8 @@ export interface NormalizedMessage {
   requestId?: string
   newSessionId?: string
   summary?: string
+  resolvedDecision?: 'allow' | 'deny'
+  resolvedAnswer?: string
 }
 
 // ── Chat v2 Types ──────────────────────────────────────
@@ -494,6 +496,8 @@ export interface DisplayChatMessage {
   taskProgress?: TaskProgress
   interactivePrompt?: InteractivePrompt
   isStreaming?: boolean
+  resolvedDecision?: 'allow' | 'deny'
+  resolvedAnswer?: string
 }
 
 export interface TaskProgress {
@@ -561,7 +565,7 @@ export type ChatV2WebSocketMessage =
       images?: string[]
     }
   | { type: 'abort'; sessionId: string }
-  | { type: 'permission_response'; permissionId: string; decision: 'allow' | 'deny'; remember?: boolean }
+  | { type: 'permission_response'; permissionId: string; decision: 'allow' | 'deny'; remember?: boolean; updatedInput?: any }
   | { type: 'interactive_response'; promptId: string; value: string }
 
 export type ChatV2WebSocketEvent =

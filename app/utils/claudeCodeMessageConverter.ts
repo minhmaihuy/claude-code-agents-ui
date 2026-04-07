@@ -86,16 +86,17 @@ export function convertClaudeCodeMessages(messages: ClaudeCodeMessage[]): Displa
   const displayMessages: DisplayChatMessage[] = []
 
   // First pass: collect tool results by tool_use_id
-  const toolResultsMap = new Map<string, { content: string; isError: boolean }>()
+  const toolResultsMap = new Map<string, { content: string; isError: boolean; toolUseResult?: any }>()
 
   for (const msg of messages) {
-    if (msg.type === 'assistant' && msg.message?.content && Array.isArray(msg.message.content)) {
+    if (msg.message?.content && Array.isArray(msg.message.content)) {
       for (const block of msg.message.content) {
         if (block.type === 'tool_result' && block.tool_use_id) {
           const resultContent = extractToolResultContent(block.content)
           toolResultsMap.set(block.tool_use_id, {
             content: resultContent,
-            isError: block.is_error || false
+            isError: block.is_error || false,
+            toolUseResult: msg.toolUseResult
           })
         }
       }
@@ -176,20 +177,42 @@ export function convertClaudeCodeMessages(messages: ClaudeCodeMessage[]): Displa
           // Tool use blocks
           else if (block.type === 'tool_use' && block.name) {
             const toolResult = block.id ? toolResultsMap.get(block.id) : undefined
+            
+            // Check if this is an AskUserQuestion
+            const isAskUserQuestion = ['askuserquestion', 'ask_user', 'askuser', 'ask_user_question', 'prompt', 'input_request'].includes(block.name.toLowerCase())
+            
+            if (isAskUserQuestion) {
+              // Extract answers if present
+              let resolvedAnswer: string | undefined
+              if (toolResult?.toolUseResult?.answers) {
+                resolvedAnswer = Object.values(toolResult.toolUseResult.answers as Record<string, string>).join(', ')
+              }
 
-            displayMessages.push({
-              id: block.id || `${msg.uuid}-tool-${block.name}`,
-              role: 'assistant',
-              content: '',
-              timestamp: msg.timestamp,
-              kind: 'tool_use',
-              toolName: block.name,
-              toolInput: block.input,
-              toolResult: toolResult ? {
-                content: toolResult.content,
-                isError: toolResult.isError
-              } : undefined
-            })
+              displayMessages.push({
+                id: block.id || `${msg.uuid}-tool-${block.name}`,
+                role: 'assistant',
+                timestamp: msg.timestamp,
+                kind: 'permission_request',
+                toolName: block.name,
+                toolInput: block.input,
+                resolvedDecision: toolResult ? 'allow' : undefined,
+                resolvedAnswer
+              })
+            } else {
+              displayMessages.push({
+                id: block.id || `${msg.uuid}-tool-${block.name}`,
+                role: 'assistant',
+                content: '',
+                timestamp: msg.timestamp,
+                kind: 'tool_use',
+                toolName: block.name,
+                toolInput: block.input,
+                toolResult: toolResult ? {
+                  content: toolResult.content,
+                  isError: toolResult.isError
+                } : undefined
+              })
+            }
           }
         }
       } else if (typeof content === 'string' && content.trim()) {

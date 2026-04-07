@@ -110,7 +110,7 @@ export default defineWebSocketHandler({
           const provider = providerRegistry.getDefault()
 
           if (provider.respondToPermission) {
-            await provider.respondToPermission(msg.permissionId, msg.decision)
+            await provider.respondToPermission(msg.permissionId, msg.decision, msg.updatedInput)
 
             peer.send(JSON.stringify({
               kind: 'status',

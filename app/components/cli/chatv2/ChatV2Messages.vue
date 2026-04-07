@@ -7,7 +7,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'permissionRespond', permissionId: string, decision: 'allow' | 'deny', remember?: boolean): void
+  (e: 'permissionRespond', permissionId: string, decision: 'allow' | 'deny', remember?: boolean, updatedInput?: any): void
   (e: 'openFile', filePath: string): void
 }>()
 
@@ -64,8 +64,8 @@ const messageGroups = computed<MessageGroup[]>(() => {
   return groups
 })
 
-function handlePermissionRespond(permissionId: string, decision: 'allow' | 'deny', remember = false) {
-  emit('permissionRespond', permissionId, decision, remember)
+function handlePermissionRespond(permissionId: string, decision: 'allow' | 'deny', remember = false, updatedInput?: any) {
+  emit('permissionRespond', permissionId, decision, remember, updatedInput)
 }
 
 function handleOpenFile(filePath: string) {

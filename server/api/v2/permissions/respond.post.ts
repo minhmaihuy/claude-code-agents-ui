@@ -3,7 +3,7 @@ import { providerRegistry } from '../../../utils/providers/registry'
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
 
-  const { permissionId, decision, remember, provider: providerName = 'claude' } = body
+  const { permissionId, decision, remember, updatedInput, provider: providerName = 'claude' } = body
 
   if (!permissionId) {
     throw createError({
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    await provider.respondToPermission(permissionId, decision)
+    await provider.respondToPermission(permissionId, decision, updatedInput)
 
     return {
       success: true,

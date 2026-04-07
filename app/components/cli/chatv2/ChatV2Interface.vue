@@ -1143,8 +1143,8 @@ async function handleSendMessage(images: string[] = []) {
 }
 
 // Handle permission response
-async function handlePermissionResponse(permissionId: string, decision: 'allow' | 'deny', remember = false) {
-  respondToPermission(permissionId, decision, remember)
+async function handlePermissionResponse(permissionId: string, decision: 'allow' | 'deny', remember = false, updatedInput?: any) {
+  respondToPermission(permissionId, decision, remember, updatedInput)
 }
 
 // Handle session renamed

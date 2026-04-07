@@ -130,11 +130,14 @@ function convertSingleMessage(
       return {
         ...base,
         kind: 'permission_request',
+        role: 'assistant',
         requestId: msg.requestId || msg.id,
         toolName: msg.toolName || 'Unknown Tool',
         toolInput: msg.toolInput,
         permissionRequest: permission,
         content: msg.content,
+        resolvedDecision: msg.resolvedDecision,
+        resolvedAnswer: msg.resolvedAnswer,
       } as DisplayChatMessage
 
     case 'task_notification':

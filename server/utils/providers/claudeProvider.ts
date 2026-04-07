@@ -61,7 +61,7 @@ const activeQueries = new Map<string, QueryInstance>()
 
 // Store pending permission approvals (Promise resolvers/rejectors keyed by permissionId)
 interface PermissionResolver {
-  resolve: (decision: { allow: boolean; message?: string }) => void
+  resolve: (decision: { allow: boolean; message?: string; updatedInput?: any }) => void
   reject: (error: Error) => void
   peerId: string
 }
@@ -106,7 +106,7 @@ function mapPermissionMode(mode?: string): string {
     case 'default':
       return 'default'
     case 'skip':
-      return 'skip'
+      return 'bypassPermissions' // "Skip" means allow all actions
     case 'acceptEdits':
       return 'acceptEdits'
     case 'bypassPermissions':
@@ -218,7 +218,7 @@ export const claudeProvider: ProviderAdapter = {
           })
 
           try {
-            const decision = await new Promise<{ allow: boolean; message?: string }>((resolve, reject) => {
+            const decision = await new Promise<{ allow: boolean; message?: string; updatedInput?: any }>((resolve, reject) => {
               pendingPermissions.set(permissionId, { resolve, reject, peerId: ws.id })
 
               setTimeout(() => {
@@ -240,7 +240,7 @@ export const claudeProvider: ProviderAdapter = {
             })
 
             if (decision.allow) {
-              return { behavior: 'allow', updatedInput: input }
+              return { behavior: 'allow', updatedInput: decision.updatedInput || input }
             }
             return { behavior: 'deny', message: decision.message || 'User denied tool use' }
           } catch (error: any) {
@@ -328,13 +328,14 @@ export const claudeProvider: ProviderAdapter = {
     }
   },
 
-  async respondToPermission(permissionId: string, decision: 'allow' | 'deny'): Promise<void> {
+  async respondToPermission(permissionId: string, decision: 'allow' | 'deny', updatedInput?: any): Promise<void> {
     const pending = pendingPermissions.get(permissionId)
     if (pending) {
       pendingPermissions.delete(permissionId)
       pending.resolve({
         allow: decision === 'allow',
         message: decision === 'deny' ? 'User denied tool use' : undefined,
+        updatedInput,
       })
       console.log(`[ClaudeProvider] Permission ${permissionId} resolved: ${decision}`)
     } else {
