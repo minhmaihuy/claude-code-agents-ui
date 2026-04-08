@@ -10,7 +10,7 @@ interface ProjectArtifactsResponse {
   skills: Skill[]
 }
 
-const { data, pending, error, refresh } = useFetch<ProjectArtifactsResponse>(`/api/project-artifacts/${encodeURIComponent(projectName)}/local`)
+const { data, pending, error } = useFetch<ProjectArtifactsResponse>(`/api/project-artifacts/${encodeURIComponent(projectName)}/local`)
 
 useHead({
   title: computed(() => data.value ? `${data.value.project.displayName} Artifacts | Agent Manager` : 'Project Artifacts')
@@ -65,7 +65,7 @@ useHead({
             </div>
             <div>
               <h3 class="text-[18px] font-semibold" style="color: var(--text-primary);">Local Skills</h3>
-              <p class="text-[13px]" style="color: var(--text-secondary);">Custom skills stored in <code>.claude/skills</code></p>
+              <p class="text-[13px]" style="color: var(--text-secondary);">Custom skills scanned by file name <code>SKILL.MD</code></p>
             </div>
             <div class="ml-auto px-2.5 py-1 rounded-full text-[12px] font-medium" style="background: var(--surface-raised); color: var(--text-secondary); border: 1px solid var(--border-subtle);">
               {{ data.skills.length }}
@@ -76,7 +76,7 @@ useHead({
             <NuxtLink
               v-for="skill in data.skills"
               :key="skill.slug"
-              :to="`/skills/${skill.slug}?workingDir=${encodeURIComponent(data.project.path)}`"
+              :to="`/skills/${skill.slug}?workingDir=${encodeURIComponent(data.project.path)}&filePath=${encodeURIComponent(skill.filePath)}`"
               class="rounded-xl p-4 transition-all duration-200 block cursor-pointer hover-surface"
               style="background: var(--surface-raised); border: 1px solid var(--border-subtle);"
             >
@@ -107,7 +107,7 @@ useHead({
             </div>
             <div>
               <h3 class="text-[18px] font-semibold" style="color: var(--text-primary);">Local Agents</h3>
-              <p class="text-[13px]" style="color: var(--text-secondary);">Custom agents stored in <code>.claude/agents</code></p>
+              <p class="text-[13px]" style="color: var(--text-secondary);">Custom agents scanned in folder name <code>`agents`</code></p>
             </div>
             <div class="ml-auto px-2.5 py-1 rounded-full text-[12px] font-medium" style="background: var(--surface-raised); color: var(--text-secondary); border: 1px solid var(--border-subtle);">
               {{ data.agents.length }}

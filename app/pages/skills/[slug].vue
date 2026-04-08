@@ -14,6 +14,7 @@ const { clearChat: clearStudioChat, toolCalls, isStreaming: studioStreaming } = 
 
 const slug = route.params.slug as string
 const queryWorkingDir = route.query.workingDir as string | undefined
+const queryFilePath = route.query.filePath as string | undefined
 const skill = ref<Skill | null>(null)
 const isImported = computed(() => skill.value?.source === 'github')
 const saving = ref(false)
@@ -43,11 +44,12 @@ onMounted(async () => {
     const localSkill = skills.value.find(s => s.slug === slug)
     const effectiveWorkingDir = queryWorkingDir || workingDir.value
     const query = effectiveWorkingDir ? { workingDir: effectiveWorkingDir } : {}
-    
-    if (localSkill?.filePath) {
+    const resolvedFilePath = queryFilePath || localSkill?.filePath
+
+    if (resolvedFilePath) {
       skill.value = await $fetch<Skill>(`/api/skills/${encodeURIComponent(slug)}`, {
         method: 'POST',
-        body: { filePath: localSkill.filePath },
+        body: { filePath: resolvedFilePath },
         query
       })
     } else {

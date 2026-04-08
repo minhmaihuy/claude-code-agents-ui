@@ -63,47 +63,53 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Directories to scan for skills
-  const skillDirs = [
-    join(projectPath, 'skills'),
-    join(projectPath, '.claude', 'skills')
-  ]
+  // Scan all SKILL.md files up to 2 levels deep in the project
+  const ALLOWED_HIDDEN = new Set(['.claude', '.agents'])
 
-  for (const skillsDir of skillDirs) {
-    if (existsSync(skillsDir)) {
-      try {
-        const entries = await readdir(skillsDir, { withFileTypes: true })
-        for (const dir of entries) {
-          if (!dir.isDirectory()) continue
-          const skillPath = join(skillsDir, dir.name, 'SKILL.md')
-          if (!existsSync(skillPath)) continue
-
-          try {
-            const raw = await readFile(skillPath, 'utf-8')
-            const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(raw)
-
-            let slug = dir.name
-            if ((slug.toLowerCase() === 'skill' || !slug) && frontmatter.name) {
-              slug = frontmatter.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-            }
-
-            // Avoid duplicates
-            if (skills.some(s => s.slug === slug)) continue
-
-            skills.push({
-              slug,
-              frontmatter: { name: slug, description: '', ...frontmatter },
-              body,
-              filePath: skillPath,
-              source: 'local',
-            })
-          } catch {
-            // skip
-          }
+  async function findSkillFiles(dir: string, depth: number): Promise<string[]> {
+    if (depth > 4) return []
+    try {
+      const entries = await readdir(dir, { withFileTypes: true })
+      const results: string[] = []
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') && !ALLOWED_HIDDEN.has(entry.name)) continue
+        const fullPath = join(dir, entry.name)
+        if (entry.isFile() && entry.name === 'SKILL.md') {
+          results.push(fullPath)
+        } else if (entry.isDirectory()) {
+          results.push(...await findSkillFiles(fullPath, depth + 1))
         }
-      } catch {
-        // skip
       }
+      return results
+    } catch {
+      return []
+    }
+  }
+
+  const skillFiles = await findSkillFiles(projectPath, 0)
+
+  for (const skillPath of skillFiles) {
+    try {
+      const raw = await readFile(skillPath, 'utf-8')
+      const { frontmatter, body } = parseFrontmatter<SkillFrontmatter>(raw)
+
+      const dirName = skillPath.split('/').at(-2) || ''
+      let slug = dirName
+      if ((slug.toLowerCase() === 'skill' || !slug) && frontmatter.name) {
+        slug = frontmatter.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      }
+
+      if (skills.some(s => s.slug === slug)) continue
+
+      skills.push({
+        slug,
+        frontmatter: { name: slug, description: '', ...frontmatter },
+        body,
+        filePath: skillPath,
+        source: 'local',
+      })
+    } catch {
+      // skip
     }
   }
 
