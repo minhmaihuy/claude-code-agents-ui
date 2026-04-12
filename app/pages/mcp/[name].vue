@@ -24,6 +24,13 @@ const isToolsCollapsed = ref(false)
 const isResourcesCollapsed = ref(true)
 const isPromptsCollapsed = ref(true)
 
+function getToolCategory(tool: any) {
+  const annotations = tool.annotations || {}
+  if (annotations.readOnlyHint) return 'safe'
+  if (annotations.destructiveHint) return 'risky'
+  return 'unknown'
+}
+
 async function loadCapabilities() {
   loadingCapabilities.value = true
   try {
@@ -37,7 +44,7 @@ async function loadCapabilities() {
 
 const form = ref({
   name: '',
-  transport: 'stdio' as 'stdio' | 'sse',
+  transport: 'stdio' as 'stdio' | 'sse' | 'http',
   command: '',
   argsString: '',
   url: '',
@@ -371,10 +378,32 @@ useUnsavedChanges(isDirty)
                 </button>
                 <div v-if="!isToolsCollapsed">
                   <div v-if="capabilities.tools.length" class="grid gap-3">
-                    <div v-for="tool in (capabilities.tools as any[])" :key="tool.name" class="p-4 rounded-xl border group hover:border-accent/40 transition-all" style="background: var(--surface-base); border-color: var(--border-subtle);">
-                      <div class="flex items-center justify-between mb-1.5">
-                        <div class="font-mono text-[13px] font-bold text-accent">{{ tool.name }}</div>
-                        <UIcon name="i-lucide-info" class="size-3.5 opacity-0 group-hover:opacity-40 transition-opacity" />
+                    <div v-for="tool in (capabilities.tools as any[])" :key="tool.name" class="p-4 rounded-xl border group/tool hover:border-accent/40 transition-all min-w-0" style="background: var(--surface-base); border-color: var(--border-subtle);">
+                      <div class="flex items-center justify-between mb-2 gap-4">
+                        <div class="font-mono text-[13px] font-bold text-accent truncate min-w-0" :title="tool.name">{{ tool.name }}</div>
+                        
+                        <div v-if="getToolCategory(tool) !== 'unknown'" class="flex items-center gap-1 bg-surface-raised/50 p-0.5 rounded-lg border border-transparent group-hover/tool:border-border-subtle transition-all shrink-0">
+                          <button 
+                            class="p-1 rounded-md transition-colors" 
+                            :class="getToolCategory(tool) === 'safe' ? 'text-success bg-success/10 border border-success/20' : 'text-text-tertiary hover:bg-success/10 hover:text-success'"
+                            title="Always Allow"
+                          >
+                            <UIcon name="i-lucide-shield-check" class="size-3.5" />
+                          </button>
+                          <button 
+                            class="p-1 rounded-md transition-colors" 
+                            :class="getToolCategory(tool) === 'risky' ? 'text-accent bg-accent/10 border border-accent/20' : 'text-text-tertiary hover:bg-accent/10 hover:text-accent'"
+                            title="Require Permission (Default)"
+                          >
+                            <UIcon name="i-lucide-fingerprint" class="size-3.5" />
+                          </button>
+                          <button 
+                            class="p-1 rounded-md transition-colors text-text-tertiary hover:bg-error/10 hover:text-error" 
+                            title="Block Tool"
+                          >
+                            <UIcon name="i-lucide-shield-x" class="size-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <div class="text-[12px] leading-relaxed" style="color: var(--text-secondary);">{{ tool.description }}</div>
                       <div v-if="tool.inputSchema" class="mt-3 pt-3 border-t border-dashed" style="border-color: var(--border-subtle);">

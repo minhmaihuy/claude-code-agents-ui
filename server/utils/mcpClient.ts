@@ -72,26 +72,43 @@ export async function getMcpCapabilities(config: {
   try {
     await client.connect(transport)
 
-    // Parallel fetch of all capabilities
-    const [toolsRes, resourcesRes, promptsRes] = await Promise.all([
-      client.listTools().catch((err) => {
-        console.error('[MCP Client] Failed to list tools:', err)
-        return { tools: [] }
-      }),
-      client.listResources().catch((err) => {
-        console.error('[MCP Client] Failed to list resources:', err)
-        return { resources: [] }
-      }),
-      client.listPrompts().catch((err) => {
-        console.error('[MCP Client] Failed to list prompts:', err)
-        return { prompts: [] }
-      })
-    ])
+    const capabilities = client.getServerCapabilities()
+    const promises = []
 
+    // Only fetch what the server says it supports
+    if (capabilities?.tools) {
+      promises.push(client.listTools().then(res => ({ type: 'tools', data: res.tools || [] })).catch(err => {
+        console.warn(`[MCP Client] Failed to list tools despite capability: ${err.message}`)
+        return { type: 'tools', data: [] }
+      }))
+    } else {
+      promises.push(Promise.resolve({ type: 'tools', data: [] }))
+    }
+
+    if (capabilities?.resources) {
+      promises.push(client.listResources().then(res => ({ type: 'resources', data: res.resources || [] })).catch(err => {
+        console.warn(`[MCP Client] Failed to list resources despite capability: ${err.message}`)
+        return { type: 'resources', data: [] }
+      }))
+    } else {
+      promises.push(Promise.resolve({ type: 'resources', data: [] }))
+    }
+
+    if (capabilities?.prompts) {
+      promises.push(client.listPrompts().then(res => ({ type: 'prompts', data: res.prompts || [] })).catch(err => {
+        console.warn(`[MCP Client] Failed to list prompts despite capability: ${err.message}`)
+        return { type: 'prompts', data: [] }
+      }))
+    } else {
+      promises.push(Promise.resolve({ type: 'prompts', data: [] }))
+    }
+
+    const results = await Promise.all(promises)
+    
     return {
-      tools: toolsRes.tools || [],
-      resources: resourcesRes.resources || [],
-      prompts: promptsRes.prompts || []
+      tools: results.find(r => r.type === 'tools')?.data || [],
+      resources: results.find(r => r.type === 'resources')?.data || [],
+      prompts: results.find(r => r.type === 'prompts')?.data || []
     }
   } catch (err: any) {
     console.error('[MCP Client] Connection failed:', err)
