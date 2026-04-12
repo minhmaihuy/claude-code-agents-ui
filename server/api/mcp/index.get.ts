@@ -17,10 +17,12 @@ export default defineEventHandler(async (event) => {
       if (data.mcpServers) {
         for (const [name, config] of Object.entries(data.mcpServers)) {
           const srvConfig = config as any
+          const transport = srvConfig.transport || srvConfig.type
+
           servers.push({
             name,
             ...srvConfig,
-            transport: srvConfig.transport || (srvConfig.url ? 'sse' : 'stdio'),
+            transport,
             scope: 'global'
           })
         }
@@ -40,12 +42,15 @@ export default defineEventHandler(async (event) => {
         if (data.mcpServers) {
           for (const [name, config] of Object.entries(data.mcpServers)) {
             const srvConfig = config as any
+            const transport = srvConfig.transport || srvConfig.type
+
             servers.push({
               name,
               ...srvConfig,
-              transport: srvConfig.transport || (srvConfig.url ? 'sse' : 'stdio'),
+              transport,
               scope: 'project'
-            })          }
+            })
+          }
         }
       } catch (err) {
         console.error('Failed to parse project .mcp.json', err)

@@ -30,16 +30,18 @@ export default defineEventHandler(async (event) => {
   try {
     const raw = await readFile(filePath, 'utf-8')
     const data = JSON.parse(raw)
-    
+
     if (!data.mcpServers || !data.mcpServers[name]) {
       throw createError({ statusCode: 404, message: 'Server not found' })
     }
 
     const config = data.mcpServers[name] as any
+    const transport = config.transport || config.type
+
     return {
       name,
       ...config,
-      transport: config.transport || (config.url ? 'sse' : 'stdio'),
+      transport,
       scope
     }
   } catch (err: any) {

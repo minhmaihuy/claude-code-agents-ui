@@ -44,10 +44,9 @@ export default defineEventHandler(async (event) => {
 
   // Update or add the server
   const config: any = {
-    transport,
     disabled: !!disabled
   }
-  
+
   if (transport === 'stdio') {
     if (!command) throw createError({ statusCode: 400, message: 'Command is required for stdio transport' })
     config.command = command
@@ -55,6 +54,7 @@ export default defineEventHandler(async (event) => {
     config.env = typeof env === 'object' && env !== null ? env : {}
   } else if (transport === 'sse' || transport === 'http') {
     if (!url) throw createError({ statusCode: 400, message: `URL is required for ${transport} transport` })
+    config.type = transport
     config.url = url
     config.headers = typeof headers === 'object' && headers !== null ? headers : {}
   } else {

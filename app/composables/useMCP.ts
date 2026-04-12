@@ -14,7 +14,7 @@ export function useMCP() {
   const servers = useState<McpServer[]>('mcp-servers', () => [])
   const loading = ref(false)
   const error = ref<string | null>(null)
-  
+
   const { workingDir } = useWorkingDir()
   const toast = useToast()
 
@@ -27,10 +27,7 @@ export function useMCP() {
       })
       // Map existing configs to include transport if missing
       servers.value = data.map(s => {
-        let transport = s.transport
-        if (!transport) {
-          transport = s.url ? 'sse' : 'stdio'
-        }
+        const transport = s.transport || s.type
         return { ...s, transport }
       })
     } catch (err: any) {
@@ -46,10 +43,7 @@ export function useMCP() {
       const data = await $fetch<any>(`/api/mcp/${encodeURIComponent(name)}`, {
         query: { scope, workingDir: workingDir.value }
       })
-      let transport = data.transport
-      if (!transport) {
-        transport = data.url ? 'sse' : 'stdio'
-      }
+      const transport = data.transport || data.type
       return {
         ...data,
         transport
@@ -70,9 +64,9 @@ export function useMCP() {
         }
       })
       const isUpdate = !!payload.oldName
-      toast.add({ 
-        title: `Server ${payload.name} ${isUpdate ? 'updated' : 'added'} successfully`, 
-        color: 'success' 
+      toast.add({
+        title: `Server ${payload.name} ${isUpdate ? 'updated' : 'added'} successfully`,
+        color: 'success'
       })
       await fetchServers()
       return res

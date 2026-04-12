@@ -31,24 +31,25 @@ export default defineEventHandler(async (event) => {
   try {
     const raw = await readFile(filePath, 'utf-8')
     const data = JSON.parse(raw)
-    
+
     if (!data.mcpServers || !data.mcpServers[name]) {
       throw createError({ statusCode: 404, message: 'Server not found' })
     }
 
     const config = data.mcpServers[name] as any
-    
+    const transport = config.transport || config.type
+
     // Connect and fetch capabilities
     return await getMcpCapabilities({
       ...config,
-      transport: config.transport || (config.url ? 'sse' : 'stdio')
+      transport
     })
   } catch (err: any) {
     if (err.statusCode) throw err
     console.error(`[MCP API] Failed to fetch capabilities for ${name}:`, err)
-    throw createError({ 
-      statusCode: 500, 
-      message: `Failed to fetch capabilities: ${err.message}` 
+    throw createError({
+      statusCode: 500,
+      message: `Failed to fetch capabilities: ${err.message}`
     })
   }
 })

@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 
 export async function getMcpCapabilities(config: {
   transport: 'stdio' | 'sse' | 'http'
@@ -16,7 +17,7 @@ export async function getMcpCapabilities(config: {
     transport = new StdioClientTransport({
       command: config.command,
       args: config.args || [],
-      env: { ...process.env, ...(config.env || {}), ...(config.headers || {}) }
+      env: { ...process.env, ...(config.env || {}), ...(config.headers || {}) } as Record<string, string>
     })
   } else {
     if (!config.url) throw new Error(`URL is required for ${config.transport} transport`)
