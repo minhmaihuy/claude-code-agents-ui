@@ -5,6 +5,10 @@ export default defineNuxtConfig({
 
   future: { compatibilityVersion: 4 },
 
+  experimental: {
+    appManifest: false,
+  },
+
   css: ['~/assets/css/main.css'],
 
   compatibilityDate: '2025-01-15',
@@ -12,6 +16,11 @@ export default defineNuxtConfig({
   runtimeConfig: {
     claudeDir: process.env.CLAUDE_DIR || '',
     claudeCliPath: process.env.CLAUDE_CLI_PATH || '',
+    anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || '',
+    anthropicAuthToken: process.env.ANTHROPIC_AUTH_TOKEN || '',
+    anthropicDefaultOpusModel: process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || '',
+    anthropicDefaultSonnetModel: process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || '',
+    anthropicDefaultHaikuModel: process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL || '',
   },
 
   nitro: {

@@ -365,7 +365,28 @@ When adding new features:
 
 ```bash
 CLAUDE_DIR="~/.claude"  # Override default Claude config directory
+CLAUDE_CLI_PATH="C:\\Program Files\\nodejs\\claude.cmd"  # Optional explicit Claude CLI path
+
+# Optional Anthropic-compatible gateway routing for SDK + CLI sessions
+ANTHROPIC_BASE_URL="http://localhost:20128/v1"
+
+# Use one auth method only
+ANTHROPIC_AUTH_TOKEN="sk-..."   # Sent as Authorization: Bearer <token>
+# ANTHROPIC_API_KEY="sk-..."    # Alternative auth header if supported by the gateway
+
+# Remap Claude Code aliases to gateway model IDs
+ANTHROPIC_DEFAULT_OPUS_MODEL="cx/gpt-5.4"
+ANTHROPIC_DEFAULT_SONNET_MODEL="cx/gpt-5.4"
+ANTHROPIC_DEFAULT_HAIKU_MODEL="cx/gpt-5.4"
 ```
+
+### Runtime config notes
+
+- `nuxt.config.ts` exposes the routing-related env vars through `runtimeConfig` so server code can read them without accessing raw env vars directly.
+- `server/utils/sdkEnv.ts` is the canonical helper for Anthropic routing env injection/restoration.
+- `server/utils/claudeSdk.ts` and `server/utils/providers/claudeProvider.ts` wrap SDK `query()` calls with `withEnv(...)` so gateway/auth/model override env vars are applied only for the lifetime of each SDK request.
+- `server/utils/cliSession.ts` merges the same routing env into spawned Claude CLI PTY sessions, so `/cli` terminal sessions and SDK chat requests use the same gateway/model mapping.
+- `.env.sample` documents the expected local values for gateway routing and Claude CLI path setup.
 
 ## Component Organization
 

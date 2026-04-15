@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { getClaudeDir, resolveClaudePath } from '../utils/claudeDir'
 import { DEFAULT_OUTPUT_STYLES } from '../utils/defaultOutputStyles'
 import { parseFrontmatter } from '../utils/frontmatter'
+import { withEnv } from '../utils/sdkEnv'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -144,7 +145,7 @@ export default defineEventHandler(async (event) => {
     let sessionId = body.sessionId || null
     let resultText = ''
 
-    for await (const message of query({
+    for await (const message of withEnv(() => query({
       prompt: lastUserMessage.content,
       options: {
         cwd: body.projectDir && existsSync(body.projectDir) ? body.projectDir : claudeDir,
@@ -160,7 +161,7 @@ export default defineEventHandler(async (event) => {
         },
         ...(sessionId ? { resume: sessionId } : {}),
       },
-    })) {
+    }))) {
       // Capture session ID for resumption
       if (message.type === 'system' && message.subtype === 'init') {
         sessionId = message.session_id

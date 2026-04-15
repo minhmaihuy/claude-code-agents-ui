@@ -1,4 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import { withEnv } from '../../utils/sdkEnv'
 
 interface ImproveRequest {
   name: string
@@ -34,7 +35,7 @@ export default defineEventHandler(async (event): Promise<ImproveResponse> => {
   let resultText = ''
 
   try {
-    for await (const message of query({
+    for await (const message of withEnv(() => query({
       prompt,
       options: {
         maxTurns: 1,
@@ -45,7 +46,7 @@ export default defineEventHandler(async (event): Promise<ImproveResponse> => {
           append: 'You are helping improve agent instructions. Be concise and actionable.',
         },
       },
-    })) {
+    }))) {
       if ('result' in message) {
         resultText = message.result
       }

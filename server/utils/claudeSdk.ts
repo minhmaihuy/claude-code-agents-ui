@@ -6,6 +6,7 @@ import { resolveClaudePath } from './claudeDir'
 import { parseFrontmatter } from './frontmatter'
 import type { Peer } from 'crossws'
 import type { NormalizedMessage } from '~/types'
+import { withEnv } from './sdkEnv'
 
 interface QueryOptions {
   agentSlug?: string
@@ -81,16 +82,18 @@ export async function queryClaudeChat(
       }
     }
 
-    // claudecodeui pattern: always pass resume if there's a real session ID.
-    // No app-level storage check needed — the SDK is the source of truth.
-    if (options.sessionId) {
+    // Only resume real SDK session IDs.
+    // Temporary client-side IDs like new-session-* should start a fresh SDK session.
+    const isRealSessionId = options.sessionId && !options.sessionId.startsWith('new-session-')
+    if (isRealSessionId) {
       sdkOptions.resume = options.sessionId
     }
 
-    // Add model if specified
+    // Map model aliases to gateway-resolved defaults when present.
     if (options.model) {
       sdkOptions.model = options.model
     }
+
 
     console.log('[Claude SDK] Starting query with options:', {
       hasSessionId: !!capturedSessionId,
@@ -99,10 +102,10 @@ export async function queryClaudeChat(
     })
 
     // Create query instance
-    const queryInstance = query({
+    const queryInstance = withEnv(() => query({
       prompt,
       options: sdkOptions,
-    })
+    }))
 
     // Stream responses (following claudecodeui pattern)
     for await (const message of queryInstance) {

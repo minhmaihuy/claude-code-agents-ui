@@ -12,6 +12,7 @@ import { MODEL_ALIAS_KEY } from '../models'
 import { DEFAULT_OUTPUT_STYLES } from '../defaultOutputStyles'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { withEnv } from '../sdkEnv'
 
 async function getOutputStyleContent(id: string, projectDir?: string): Promise<{ content: string; keepCodingInstructions: boolean } | null> {
   // 1. Check built-in
@@ -250,10 +251,10 @@ export const claudeProvider: ProviderAdapter = {
         }
       }
 
-      const queryInstance = query({
+      const queryInstance = withEnv(() => query({
         prompt,
         options: sdkOptions,
-      })
+      }))
 
       // Stream responses
       for await (const message of queryInstance) {

@@ -5,6 +5,21 @@ import path from 'node:path'
 import os from 'node:os'
 import type { FSWatcher } from 'chokidar'
 import { getClaudeDir } from './claudeDir'
+import { getAnthropicRoutingEnv } from './sdkEnv'
+
+function getClaudeSessionEnv(workingDir: string) {
+  const routingEnv = getAnthropicRoutingEnv()
+
+  return {
+    ...process.env,
+    ...routingEnv,
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor',
+    HOME: os.homedir(),
+    PWD: workingDir,
+  }
+}
+
 
 export interface CliSessionMetadata {
   id: string
@@ -97,14 +112,7 @@ export async function createCliSession(options: {
       cols: options.cols || 80,
       rows: options.rows || 24,
       cwd: workingDir,
-      env: {
-        ...process.env,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-        HOME: os.homedir(),
-        // Ensure Claude has access to the working directory
-        PWD: workingDir,
-      },
+      env: getClaudeSessionEnv(workingDir),
     })
     console.log('[CLI Session] Claude Code CLI spawned successfully')
   } catch (error: any) {
